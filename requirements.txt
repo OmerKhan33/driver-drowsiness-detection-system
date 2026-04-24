@@ -1,0 +1,15 @@
+ultralytics
+opencv-python
+mediapipe
+torch
+torchvision
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+streamlit
+playsound
+pytest
+flake8
+mlflow

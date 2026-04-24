@@ -1,0 +1,21 @@
+# create .gitignore
+cat > .gitignore << EOF
+# data & models (too large for GitHub)
+data/raw/
+models/weights/*.pt
+models/weights/*.h5
+
+# Python
+__pycache__/
+*.pyc
+.env
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
