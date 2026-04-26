@@ -1,6 +1,5 @@
-# create .gitignore
-cat > .gitignore << EOF
-# data & models (too large for GitHub)
+# Data & models (too large for GitHub)
+dataset/
 data/raw/
 models/weights/*.pt
 models/weights/*.h5
@@ -10,7 +9,10 @@ __pycache__/
 *.pyc
 .env
 venv/
+ultra_venv/
 *.egg-info/
+dist/
+build/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -18,4 +20,6 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
-EOF
+
+# MLflow
+mlruns/

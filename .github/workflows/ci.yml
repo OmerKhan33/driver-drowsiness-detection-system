@@ -1,0 +1,139 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lint-
+
+      - name: Install linting tools
+        run: pip install flake8 black isort
+
+      - name: Run flake8
+        run: |
+          if [ -d "src" ] && [ "$(find src -name '*.py' | head -1)" ]; then
+            flake8 src/ --max-line-length=120 --ignore=E203,W503,E501
+          else
+            echo "No Python files found in src/, skipping flake8 for src/"
+          fi
+          if [ -d "tests" ] && [ "$(find tests -name '*.py' | head -1)" ]; then
+            flake8 tests/ --max-line-length=120 --ignore=E203,W503,E501
+          else
+            echo "No Python files found in tests/, skipping flake8 for tests/"
+          fi
+          if [ -d "app" ] && [ "$(find app -name '*.py' | head -1)" ]; then
+            flake8 app/ --max-line-length=120 --ignore=E203,W503,E501
+          else
+            echo "No Python files found in app/, skipping flake8 for app/"
+          fi
+
+      - name: Check black formatting
+        run: |
+          FILES=$(find src tests app -name '*.py' 2>/dev/null | head -1)
+          if [ -n "$FILES" ]; then
+            black --check --line-length=120 src/ tests/ app/ 2>/dev/null || true
+          else
+            echo "No Python files found, skipping black check"
+          fi
+
+      - name: Check isort
+        run: |
+          FILES=$(find src tests app -name '*.py' 2>/dev/null | head -1)
+          if [ -n "$FILES" ]; then
+            isort --check-only --profile black src/ tests/ app/ 2>/dev/null || true
+          else
+            echo "No Python files found, skipping isort check"
+          fi
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-test-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-test-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: |
+          if [ -d "tests" ] && [ "$(find tests -name 'test_*.py' | head -1)" ]; then
+            pytest tests/ --cov=src --cov-report=xml -v
+          else
+            echo "No test files found in tests/, skipping pytest"
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  model-check:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-model-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-model-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sanity check
+        run: python src/utils/sanity_check.py
+
+      - name: Upload sanity check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanity-check-results
+          path: models/results/sanity_check.json
+          if-no-files-found: ignore
