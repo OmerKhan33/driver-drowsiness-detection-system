@@ -90,8 +90,12 @@ jobs:
 
       - name: Run pytest
         run: |
-          if [ -d "tests" ] && [ "$(find tests -name 'test_*.py' | head -1)" ]; then
-            pytest tests/ --cov=src --cov-report=xml -v
+          if [ -d "tests" ] && [ "$(find tests -name 'test_*.py' -size +0c | head -1)" ]; then
+            if [ -d "src" ] && [ "$(find src -name '*.py' -size +0c | head -1)" ]; then
+              pytest tests/ --cov=src --cov-report=xml -v
+            else
+              pytest tests/ -v
+            fi
           else
             echo "No test files found in tests/, skipping pytest"
           fi
