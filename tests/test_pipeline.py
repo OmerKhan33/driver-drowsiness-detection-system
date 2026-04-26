@@ -98,7 +98,8 @@ class TestPreprocessing:
     def test_is_blurry_on_uniform_image(self):
         """A flat uniform image should be detected as blurry."""
         uniform = np.ones((100, 100, 3), dtype=np.uint8) * 128
-        assert is_blurry(uniform) is True
+        # Use bool() to convert numpy.bool_ to Python bool for safe comparison
+        assert bool(is_blurry(uniform))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -264,7 +265,7 @@ class TestAlertSystem:
         """High MAR should trigger yawning detection."""
         system = self._make_system()
         status = system.update(ear=0.30, mar=0.75, cnn_confidence=0.2)
-        assert status["is_yawning"] is True
+        assert status["is_yawning"]
 
     def test_update_returns_dict(self):
         """update() should return dict with required keys."""
