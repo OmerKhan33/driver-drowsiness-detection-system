@@ -11,7 +11,7 @@ dist
 build
 data/raw
 data/processed
-models/weights/*.pt
+# models/weights are included for inference
 notebooks
 tests
 *.md
