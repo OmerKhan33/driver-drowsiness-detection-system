@@ -60,11 +60,15 @@ COPY models/ ./models/
 COPY requirements.txt .
 COPY README.md .
 
-# Create necessary directories
-RUN mkdir -p models/weights models/results data/processed
+# Create necessary directories (data/ is where SQLite DB lives)
+RUN mkdir -p models/weights models/results data/processed data
+
+# Persist database across container restarts
+VOLUME /app/data
 
 # Set Python path so 'from src.xxx' imports work
 ENV PYTHONPATH=/app
+ENV PYTHONIOENCODING=utf-8
 ENV STREAMLIT_SERVER_HEADLESS=true
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
@@ -76,6 +80,6 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD python -c "import torch; print('OK')" || exit 1
 
 # Default command: run Streamlit app
-CMD ["streamlit", "run", "app/streamlit_app.py", \
+CMD ["python", "-m", "streamlit", "run", "app/streamlit_app.py", \
      "--server.port=8501", \
      "--server.address=0.0.0.0"]

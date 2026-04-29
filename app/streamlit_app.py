@@ -1,8 +1,8 @@
 """
-Driver Drowsiness Detection — Streamlit Application.
+Driver Drowsiness Detection - Streamlit Application.
 
-Features: Login/Signup, Driver webcam dashboard, Admin history dashboard.
-Run: streamlit run app/streamlit_app.py
+Features: Role-based login, Driver webcam dashboard, Admin control panel.
+Run: python -m streamlit run app/streamlit_app.py
 """
 
 import sys
@@ -31,8 +31,6 @@ from app.database import (
 )
 from src.alert.alert_system import DrowsinessAlertSystem
 from src.utils.drowsiness_utils import (
-    EAR_THRESHOLD,
-    MAR_THRESHOLD,
     compute_avg_ear,
     compute_drowsiness_score,
     compute_mar,
@@ -41,467 +39,441 @@ from src.utils.drowsiness_utils import (
     extract_mouth_landmarks,
 )
 
-# ─── Page Config ──────────────────────────────────────────────────────────────
+# ── Page Config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Driver Drowsiness Detection System",
-    page_icon="🚗",
+    page_title="DrowsiGuard - Driver Safety System",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ─── Custom CSS ───────────────────────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────────────────────
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-.stApp { font-family: 'Inter', sans-serif; }
-.main .block-container { padding-top: 1rem; max-width: 1400px; }
-.app-header {
-    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-    padding: 1.5rem 2rem; border-radius: 16px; margin-bottom: 1.5rem;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+st.markdown("""<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+* { font-family: 'Inter', sans-serif; }
+.main .block-container { padding-top: 0.8rem; max-width: 1440px; }
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #0a0a1a 0%, #111827 100%); }
+
+/* Header */
+.hdr {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #0f172a 100%);
+    padding: 1.6rem 2.2rem; border-radius: 18px; margin-bottom: 1.2rem;
+    border: 1px solid rgba(59,130,246,0.15);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    position: relative; overflow: hidden;
 }
-.app-header h1 { color: #fff; font-size: 1.8rem; font-weight: 700; margin: 0; }
-.app-header p { color: rgba(255,255,255,0.6); font-size: 0.95rem; margin: 0.3rem 0 0 0; }
-.metric-card {
-    background: linear-gradient(145deg, #1a1a2e, #16213e);
-    border-radius: 14px; padding: 1.2rem 1.5rem; text-align: center;
-    border: 1px solid rgba(255,255,255,0.06);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+.hdr::before {
+    content: ''; position: absolute; top: -50%; right: -30%; width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
 }
-.metric-label {
-    color: rgba(255,255,255,0.5); font-size: 0.75rem;
-    text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600;
+.hdr h1 { color: #f1f5f9; font-size: 1.75rem; font-weight: 800; margin: 0; letter-spacing: -0.5px; }
+.hdr p { color: rgba(148,163,184,0.8); font-size: 0.9rem; margin: 0.25rem 0 0 0; }
+
+/* Metric cards */
+.mc {
+    background: linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,58,95,0.6));
+    border-radius: 16px; padding: 1rem 1.2rem; text-align: center;
+    border: 1px solid rgba(59,130,246,0.1);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    backdrop-filter: blur(10px); transition: all 0.3s ease;
 }
-.metric-value { font-size: 2rem; font-weight: 700; margin: 0.3rem 0; }
-.metric-value.green { color: #00d97e; }
-.metric-value.yellow { color: #f6c343; }
-.metric-value.red { color: #e63757; }
-.status-badge {
-    display: inline-block; padding: 0.5rem 1.8rem; border-radius: 50px;
-    font-weight: 700; font-size: 1.1rem; letter-spacing: 1.5px; text-transform: uppercase;
+.mc:hover { border-color: rgba(59,130,246,0.3); transform: translateY(-1px); }
+.mc .lbl { color: #94a3b8; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
+.mc .val { font-size: 1.6rem; font-weight: 800; margin: 0.2rem 0; letter-spacing: -0.5px; }
+.mc .val.g { color: #22c55e; } .mc .val.y { color: #eab308; } .mc .val.r { color: #ef4444; }
+
+/* Status pill */
+.sp {
+    display: inline-block; padding: 0.45rem 2rem; border-radius: 50px;
+    font-weight: 800; font-size: 0.95rem; letter-spacing: 2px; text-transform: uppercase;
 }
-.status-alert { background: linear-gradient(135deg, #00d97e, #00b368); color: #fff; }
-.status-mild { background: linear-gradient(135deg, #f6c343, #e6a800); color: #1a1a2e; }
-.status-drowsy {
-    background: linear-gradient(135deg, #e63757, #c41230); color: #fff;
-    animation: pulse 1s infinite;
+.sp.ok { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 4px 15px rgba(34,197,94,0.3); }
+.sp.wn { background: linear-gradient(135deg, #eab308, #ca8a04); color: #0f172a; box-shadow: 0 4px 15px rgba(234,179,8,0.3); }
+.sp.dg { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; animation: pls 1.2s infinite; box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
+@keyframes pls { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 25px 8px rgba(239,68,68,0.15); } }
+
+/* Login */
+.login-wrap {
+    max-width: 440px; margin: 2rem auto;
+    background: linear-gradient(145deg, rgba(15,23,42,0.95), rgba(30,58,95,0.7));
+    border-radius: 24px; padding: 2.5rem; border: 1px solid rgba(59,130,246,0.12);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5); backdrop-filter: blur(20px);
 }
-@keyframes pulse {
-    0%,100% { box-shadow: 0 0 0 0 rgba(230,55,87,0.5); }
-    50% { box-shadow: 0 0 20px 10px rgba(230,55,87,0.2); }
+.login-wrap h2 { color: #f1f5f9; text-align: center; font-weight: 800; font-size: 1.4rem; margin-bottom: 0.3rem; }
+.login-wrap .sub { color: #64748b; text-align: center; font-size: 0.85rem; margin-bottom: 1.5rem; }
+
+/* Admin stat card */
+.asc {
+    background: linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,58,95,0.6));
+    border-radius: 16px; padding: 1.5rem; text-align: center;
+    border: 1px solid rgba(59,130,246,0.1); box-shadow: 0 4px 20px rgba(0,0,0,0.25);
 }
-.login-box {
-    background: linear-gradient(145deg, #1a1a2e, #16213e);
-    border-radius: 20px; padding: 2.5rem; max-width: 420px; margin: 3rem auto;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+.asc h2 { font-size: 2.4rem; font-weight: 800; margin: 0; }
+.asc p { color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px; margin: 0.3rem 0 0 0; }
+
+/* Idle cam */
+.idle-cam {
+    background: linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,58,95,0.4));
+    border-radius: 18px; padding: 5rem 2rem; text-align: center;
+    border: 2px dashed rgba(59,130,246,0.15);
 }
-.admin-stat {
-    background: linear-gradient(145deg, #1a1a2e, #16213e);
-    border-radius: 14px; padding: 1.5rem; text-align: center;
-    border: 1px solid rgba(255,255,255,0.06);
-}
-.admin-stat h2 { font-size: 2.2rem; font-weight: 700; margin: 0; }
-.admin-stat p { color: rgba(255,255,255,0.5); font-size: 0.8rem; text-transform: uppercase; }
-</style>
-""", unsafe_allow_html=True)
+</style>""", unsafe_allow_html=True)
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def mc(label, value, color="g"):
+    return f'<div class="mc"><div class="lbl">{label}</div><div class="val {color}">{value}</div></div>'
 
 
-def metric_html(label, value, color="green"):
-    """Generate metric card HTML."""
-    return (
-        f'<div class="metric-card">'
-        f'<div class="metric-label">{label}</div>'
-        f'<div class="metric-value {color}">{value}</div></div>'
-    )
+def sp(level):
+    c = {"ALERT": "ok", "MILD": "wn", "DROWSY": "dg"}.get(level, "ok")
+    return f'<div style="text-align:center"><span class="sp {c}">{level}</span></div>'
 
 
-def status_html(level):
-    """Generate status badge HTML."""
-    css = {"ALERT": "status-alert", "MILD": "status-mild", "DROWSY": "status-drowsy"}
-    return f'<div style="text-align:center"><span class="status-badge {css.get(level, "status-alert")}">{level}</span></div>'
-
-
-def draw_overlay(frame, ear, mar, score, level, fps):
-    """Draw metrics overlay on the video frame."""
+def overlay(frame, ear, mar, score, level, fps):
     h, w = frame.shape[:2]
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (w, 55), (15, 15, 30), -1)
-    cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
-    color = {"ALERT": (126, 217, 0), "MILD": (67, 195, 246), "DROWSY": (87, 55, 230)}.get(level, (126, 217, 0))
-    cv2.putText(frame, f"EAR:{ear:.3f}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(frame, f"MAR:{mar:.3f}", (160, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(frame, f"Score:{score:.2f}", (310, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(frame, level, (480, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
-    cv2.putText(frame, f"FPS:{fps:.0f}", (w - 100, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.rectangle(frame, (0, 0), (w - 1, h - 1), color, 3)
+    ov = frame.copy()
+    cv2.rectangle(ov, (0, 0), (w, 50), (10, 10, 25), -1)
+    cv2.addWeighted(ov, 0.75, frame, 0.25, 0, frame)
+    col = {"ALERT": (94, 234, 34), "MILD": (8, 179, 234), "DROWSY": (68, 68, 239)}.get(level, (94, 234, 34))
+    cv2.putText(frame, f"EAR:{ear:.3f}", (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(frame, f"MAR:{mar:.3f}", (155, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(frame, f"Score:{score:.2f}", (298, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(frame, level, (460, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, col, 2)
+    cv2.putText(frame, f"FPS:{fps:.0f}", (w - 95, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.rectangle(frame, (0, 0), (w - 1, h - 1), col, 3)
     return frame
 
 
-# ─── Auth Page ────────────────────────────────────────────────────────────────
+# Default thresholds (admin can change via DB later)
+DEFAULT_EAR = 0.25
+DEFAULT_MAR = 0.60
+DEFAULT_CONSEC = 15
+DEFAULT_CNN = 0.65
 
+
+# ── Auth Page ─────────────────────────────────────────────────────────────────
 
 def render_auth_page():
-    """Render the login/signup page."""
     st.markdown("""
-    <div class="app-header" style="text-align:center">
-        <h1>🚗 Driver Drowsiness Detection System</h1>
-        <p>Secure Login Portal • Real-time Safety Monitoring</p>
+    <div class="hdr" style="text-align:center">
+        <h1>🛡️ DrowsiGuard</h1>
+        <p>Intelligent Driver Safety Monitoring System</p>
     </div>""", unsafe_allow_html=True)
 
-    tab_login, tab_signup = st.tabs(["🔐 Login", "📝 Sign Up"])
+    tab_login, tab_signup = st.tabs(["Login", "Create Account"])
 
     with tab_login:
+        st.markdown("""<div class="login-wrap">
+            <h2>Welcome Back</h2>
+            <p class="sub">Sign in to your account</p>
+        </div>""", unsafe_allow_html=True)
+        role = st.selectbox("Login as", ["Driver", "Admin"], key="login_role")
         with st.form("login_form"):
-            st.markdown("### Welcome Back")
-            username = st.text_input("Username", key="login_user")
-            password = st.text_input("Password", type="password", key="login_pass")
-            submitted = st.form_submit_button("Login", use_container_width=True, type="primary")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Sign In", use_container_width=True, type="primary")
             if submitted and username and password:
                 result = authenticate_user(username, password)
-                if result["success"]:
+                if not result["success"]:
+                    st.error(result["message"])
+                elif result["role"] != role.lower():
+                    st.error(f"This account is not registered as {role}.")
+                else:
                     st.session_state.user = result
                     st.session_state.logged_in = True
                     st.rerun()
-                else:
-                    st.error(f"❌ {result['message']}")
 
     with tab_signup:
+        st.markdown("""<div class="login-wrap">
+            <h2>Driver Registration</h2>
+            <p class="sub">Create a new driver account</p>
+        </div>""", unsafe_allow_html=True)
         with st.form("signup_form"):
-            st.markdown("### Create Driver Account")
-            full_name = st.text_input("Full Name", key="signup_name")
-            new_user = st.text_input("Username", key="signup_user")
-            new_pass = st.text_input("Password", type="password", key="signup_pass")
-            confirm = st.text_input("Confirm Password", type="password", key="signup_confirm")
+            full_name = st.text_input("Full Name")
+            new_user = st.text_input("Choose Username")
+            new_pass = st.text_input("Password", type="password", key="s_pass")
+            confirm = st.text_input("Confirm Password", type="password", key="s_conf")
             submitted = st.form_submit_button("Create Account", use_container_width=True)
             if submitted:
                 if not all([full_name, new_user, new_pass, confirm]):
-                    st.warning("Please fill all fields")
+                    st.warning("Please fill all fields.")
                 elif new_pass != confirm:
-                    st.error("Passwords do not match")
+                    st.error("Passwords do not match.")
                 elif len(new_pass) < 4:
-                    st.error("Password must be at least 4 characters")
+                    st.error("Password must be at least 4 characters.")
                 else:
                     result = create_user(new_user, new_pass, full_name)
                     if result["success"]:
-                        st.success("✅ Account created! Please login.")
+                        st.success("Account created! Go to Login tab.")
                     else:
-                        st.error(f"❌ {result['message']}")
-
-    st.markdown("---")
-    st.caption("Default admin: username `admin` / password `admin123`")
+                        st.error(result["message"])
 
 
-# ─── Driver Dashboard ────────────────────────────────────────────────────────
-
+# ── Driver Dashboard ──────────────────────────────────────────────────────────
 
 def render_driver_dashboard():
-    """Render the driver's real-time monitoring dashboard."""
     user = st.session_state.user
 
-    st.markdown(f"""
-    <div class="app-header">
+    st.markdown(f"""<div class="hdr">
         <h1>🚗 Driver Dashboard</h1>
-        <p>Welcome, {user['full_name']} • Real-time Drowsiness Monitoring</p>
+        <p>Welcome, {user['full_name']} &bull; Real-time Monitoring Active</p>
     </div>""", unsafe_allow_html=True)
 
-    # Sidebar settings
     with st.sidebar:
         st.markdown(f"### 👤 {user['full_name']}")
-        st.caption(f"Role: Driver | @{user['username']}")
+        st.caption(f"@{user['username']} | Driver")
+        st.markdown("---")
         if st.button("🚪 Logout", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
             st.rerun()
         st.markdown("---")
-        ear_thresh = st.slider("EAR Threshold", 0.15, 0.35, EAR_THRESHOLD, 0.01)
-        mar_thresh = st.slider("MAR Threshold", 0.40, 0.80, MAR_THRESHOLD, 0.05)
-        consec_frames = st.slider("Consecutive Frames", 5, 30, 15, 1)
-        show_landmarks = st.checkbox("Show Landmarks", True)
-        show_overlay = st.checkbox("Show Metrics Overlay", True)
+        show_lm = st.checkbox("Show Landmarks", True)
+        show_ov = st.checkbox("Show Overlay", True)
 
-    # Init session state
-    if "alert_system" not in st.session_state:
-        st.session_state.alert_system = DrowsinessAlertSystem(
-            ear_threshold=ear_thresh, mar_threshold=mar_thresh,
-            consec_frames=consec_frames, alert_sound=False,
-        )
-    if "ear_history" not in st.session_state:
-        st.session_state.ear_history = deque(maxlen=100)
-    if "mar_history" not in st.session_state:
-        st.session_state.mar_history = deque(maxlen=100)
-    if "total_frames" not in st.session_state:
-        st.session_state.total_frames = 0
-    if "drowsy_frames" not in st.session_state:
-        st.session_state.drowsy_frames = 0
-    if "running" not in st.session_state:
-        st.session_state.running = False
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = None
-    if "last_event_time" not in st.session_state:
-        st.session_state.last_event_time = 0
+    # Init state
+    for key, default in [
+        ("alert_system", DrowsinessAlertSystem(
+            ear_threshold=DEFAULT_EAR, mar_threshold=DEFAULT_MAR,
+            consec_frames=DEFAULT_CONSEC, alert_sound=False)),
+        ("ear_hist", deque(maxlen=100)),
+        ("mar_hist", deque(maxlen=100)),
+        ("total_frames", 0), ("drowsy_frames", 0),
+        ("running", False), ("session_id", None), ("last_evt", 0),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-    # Control buttons
-    c1, c2, c3 = st.columns(3)
+    # Controls
+    c1, c2 = st.columns(2)
     with c1:
-        if st.button("▶️ Start", use_container_width=True, type="primary"):
+        if st.button("▶  Start Monitoring", use_container_width=True, type="primary"):
             st.session_state.running = True
             st.session_state.session_id = start_session(user["user_id"])
             st.session_state.total_frames = 0
             st.session_state.drowsy_frames = 0
             st.session_state.alert_system.reset()
-            st.session_state.ear_history.clear()
-            st.session_state.mar_history.clear()
+            st.session_state.ear_hist.clear()
+            st.session_state.mar_hist.clear()
     with c2:
-        if st.button("⏹ Stop", use_container_width=True):
+        if st.button("⏹  Stop", use_container_width=True):
             if st.session_state.running and st.session_state.session_id:
                 stats = st.session_state.alert_system.get_stats()
-                end_session(
-                    st.session_state.session_id,
-                    st.session_state.total_frames,
-                    st.session_state.drowsy_frames,
-                    stats["total_alerts"], stats["total_yawns"],
-                    stats["average_ear"], stats["average_mar"],
-                )
+                end_session(st.session_state.session_id,
+                            st.session_state.total_frames,
+                            st.session_state.drowsy_frames,
+                            stats["total_alerts"], stats["total_yawns"],
+                            stats["average_ear"], stats["average_mar"])
             st.session_state.running = False
-    with c3:
-        if st.button("🔄 Reset", use_container_width=True):
-            st.session_state.alert_system.reset()
-            st.session_state.ear_history.clear()
-            st.session_state.mar_history.clear()
 
     # Layout
-    col_video, col_stats = st.columns([3, 1])
-    with col_video:
-        video_ph = st.empty()
-    with col_stats:
-        status_ph = st.empty()
+    col_v, col_s = st.columns([3, 1])
+    with col_v:
+        vid = st.empty()
+    with col_s:
+        stat_ph = st.empty()
         ear_ph = st.empty()
         mar_ph = st.empty()
-        score_ph = st.empty()
+        scr_ph = st.empty()
         fps_ph = st.empty()
-        consec_ph = st.empty()
+        con_ph = st.empty()
 
-    chart_c1, chart_c2 = st.columns(2)
-    with chart_c1:
+    cc1, cc2 = st.columns(2)
+    with cc1:
         st.markdown("#### 👁 EAR History")
-        ear_chart = st.empty()
-    with chart_c2:
+        ear_ch = st.empty()
+    with cc2:
         st.markdown("#### 👄 MAR History")
-        mar_chart = st.empty()
+        mar_ch = st.empty()
 
-    # Detection loop
     if st.session_state.running:
         try:
-            import mediapipe as mp
-            face_mesh = mp.solutions.face_mesh.FaceMesh(
+            import mediapipe as mp_mod
+            face_mesh = mp_mod.solutions.face_mesh.FaceMesh(
                 max_num_faces=1, refine_landmarks=True,
-                min_detection_confidence=0.5, min_tracking_confidence=0.5,
-            )
+                min_detection_confidence=0.5, min_tracking_confidence=0.5)
         except ImportError:
-            st.error("MediaPipe not installed")
+            st.error("MediaPipe not installed.")
             st.stop()
 
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            st.error("❌ Cannot access webcam")
+            st.error("Cannot access webcam.")
             st.session_state.running = False
             st.stop()
 
-        alert_sys = st.session_state.alert_system
-        alert_sys.ear_threshold = ear_thresh
-        alert_sys.mar_threshold = mar_thresh
-        alert_sys.consec_frames_threshold = consec_frames
+        asys = st.session_state.alert_system
 
         while st.session_state.running:
             t0 = time.perf_counter()
             ret, frame = cap.read()
             if not ret:
                 break
-
             frame = cv2.flip(frame, 1)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w = frame.shape[:2]
-            results = face_mesh.process(rgb)
+            res = face_mesh.process(rgb)
+            ear_v, mar_v = 0.30, 0.40
 
-            ear_val, mar_val = 0.30, 0.40
+            if res.multi_face_landmarks:
+                lm = res.multi_face_landmarks[0]
+                le, re = extract_eye_landmarks(lm, w, h)
+                mo = extract_mouth_landmarks(lm, w, h)
+                ear_v = compute_avg_ear(le, re)
+                mar_v = compute_mar(mo)
+                if show_lm:
+                    for pts in [le, re]:
+                        pts_i = pts.astype(int)
+                        for i in range(len(pts_i)):
+                            cv2.line(frame, tuple(pts_i[i]),
+                                     tuple(pts_i[(i + 1) % len(pts_i)]), (0, 255, 128), 1)
 
-            if results.multi_face_landmarks:
-                lm = results.multi_face_landmarks[0]
-                left_eye, right_eye = extract_eye_landmarks(lm, w, h)
-                mouth = extract_mouth_landmarks(lm, w, h)
-                ear_val = compute_avg_ear(left_eye, right_eye)
-                mar_val = compute_mar(mouth)
-
-                if show_landmarks:
-                    for eye_pts in [left_eye, right_eye]:
-                        pts = eye_pts.astype(int)
-                        for i in range(len(pts)):
-                            cv2.line(frame, tuple(pts[i]), tuple(pts[(i + 1) % len(pts)]), (0, 255, 128), 1)
-                        for pt in pts:
-                            cv2.circle(frame, tuple(pt), 2, (0, 255, 255), -1)
-
-            status = alert_sys.update(ear=ear_val, mar=mar_val, cnn_confidence=0.0)
-            score = compute_drowsiness_score(ear=ear_val, mar=mar_val, cnn_confidence=0.0)
+            status = asys.update(ear=ear_v, mar=mar_v, cnn_confidence=0.0)
+            score = compute_drowsiness_score(ear=ear_v, mar=mar_v, cnn_confidence=0.0)
             level = drowsiness_level(score)
             elapsed = time.perf_counter() - t0
             fps = 1.0 / elapsed if elapsed > 0 else 0
 
-            st.session_state.ear_history.append(ear_val)
-            st.session_state.mar_history.append(mar_val)
+            st.session_state.ear_hist.append(ear_v)
+            st.session_state.mar_hist.append(mar_v)
             st.session_state.total_frames += 1
             if status["is_drowsy"]:
                 st.session_state.drowsy_frames += 1
 
-            # Log events to DB (throttle: max once per 2 seconds)
             now = time.time()
-            if now - st.session_state.last_event_time > 2 and st.session_state.session_id:
+            if now - st.session_state.last_evt > 2 and st.session_state.session_id:
                 if status["is_drowsy"]:
                     log_event(st.session_state.session_id, user["user_id"],
-                              "drowsy", ear_val, mar_val, score, status["consecutive_frames"])
-                    st.session_state.last_event_time = now
+                              "drowsy", ear_v, mar_v, score, status["consecutive_frames"])
+                    st.session_state.last_evt = now
                 elif status["is_yawning"]:
                     log_event(st.session_state.session_id, user["user_id"],
-                              "yawn", ear_val, mar_val, score, status["consecutive_frames"])
-                    st.session_state.last_event_time = now
+                              "yawn", ear_v, mar_v, score, status["consecutive_frames"])
+                    st.session_state.last_evt = now
 
-            if show_overlay:
-                frame = draw_overlay(frame, ear_val, mar_val, score, level, fps)
+            if show_ov:
+                frame = overlay(frame, ear_v, mar_v, score, level, fps)
 
-            video_ph.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
-            status_ph.markdown(status_html(level), unsafe_allow_html=True)
-
-            ec = "green" if ear_val > ear_thresh else "red"
-            mc = "green" if mar_val < mar_thresh else "yellow"
-            sc = "green" if score < 0.4 else ("yellow" if score < 0.7 else "red")
-
-            ear_ph.markdown(metric_html("EAR", f"{ear_val:.3f}", ec), unsafe_allow_html=True)
-            mar_ph.markdown(metric_html("MAR", f"{mar_val:.3f}", mc), unsafe_allow_html=True)
-            score_ph.markdown(metric_html("Score", f"{score:.2f}", sc), unsafe_allow_html=True)
-            fps_ph.markdown(metric_html("FPS", f"{fps:.0f}", "green"), unsafe_allow_html=True)
-            consec_ph.markdown(metric_html("Consec", str(status["consecutive_frames"]),
-                                           "red" if status["is_drowsy"] else "green"), unsafe_allow_html=True)
-
-            if len(st.session_state.ear_history) > 2:
-                ear_chart.line_chart(list(st.session_state.ear_history), height=150)
-                mar_chart.line_chart(list(st.session_state.mar_history), height=150)
-
+            vid.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
+            stat_ph.markdown(sp(level), unsafe_allow_html=True)
+            ec = "g" if ear_v > DEFAULT_EAR else "r"
+            mco = "g" if mar_v < DEFAULT_MAR else "y"
+            sco = "g" if score < 0.4 else ("y" if score < 0.7 else "r")
+            ear_ph.markdown(mc("EAR", f"{ear_v:.3f}", ec), unsafe_allow_html=True)
+            mar_ph.markdown(mc("MAR", f"{mar_v:.3f}", mco), unsafe_allow_html=True)
+            scr_ph.markdown(mc("Score", f"{score:.2f}", sco), unsafe_allow_html=True)
+            fps_ph.markdown(mc("FPS", f"{fps:.0f}", "g"), unsafe_allow_html=True)
+            con_ph.markdown(mc("Consec", str(status["consecutive_frames"]),
+                               "r" if status["is_drowsy"] else "g"), unsafe_allow_html=True)
+            if len(st.session_state.ear_hist) > 2:
+                ear_ch.line_chart(list(st.session_state.ear_hist), height=140)
+                mar_ch.line_chart(list(st.session_state.mar_hist), height=140)
             time.sleep(0.01)
-
         cap.release()
     else:
-        video_ph.markdown("""
-        <div style="background:linear-gradient(145deg,#1a1a2e,#16213e);border-radius:14px;
-        padding:4rem 2rem;text-align:center;border:2px dashed rgba(255,255,255,0.1);">
-        <p style="font-size:3rem;margin:0;">📹</p>
-        <p style="color:rgba(255,255,255,0.5);font-size:1.1rem;margin-top:1rem;">
-        Click <strong>Start</strong> to begin monitoring</p></div>
-        """, unsafe_allow_html=True)
-        status_ph.markdown(status_html("ALERT"), unsafe_allow_html=True)
-        for ph in [ear_ph, mar_ph, score_ph, fps_ph]:
-            ph.markdown(metric_html("—", "—", "green"), unsafe_allow_html=True)
-        consec_ph.markdown(metric_html("Consec", "0", "green"), unsafe_allow_html=True)
+        vid.markdown("""<div class="idle-cam">
+            <p style="font-size:3.5rem;margin:0;">📹</p>
+            <p style="color:#94a3b8;font-size:1.1rem;margin-top:1rem;">
+            Click <strong>Start Monitoring</strong> to begin</p>
+        </div>""", unsafe_allow_html=True)
+        stat_ph.markdown(sp("ALERT"), unsafe_allow_html=True)
+        for ph in [ear_ph, mar_ph, scr_ph, fps_ph]:
+            ph.markdown(mc("--", "--", "g"), unsafe_allow_html=True)
+        con_ph.markdown(mc("Consec", "0", "g"), unsafe_allow_html=True)
 
 
-# ─── Admin Dashboard ─────────────────────────────────────────────────────────
-
+# ── Admin Dashboard ───────────────────────────────────────────────────────────
 
 def render_admin_dashboard():
-    """Render the admin analytics dashboard."""
     user = st.session_state.user
 
-    st.markdown("""
-    <div class="app-header">
-        <h1>🛡️ Admin Dashboard</h1>
-        <p>System Administrator • Driver Monitoring Analytics</p>
+    st.markdown("""<div class="hdr">
+        <h1>🛡️ Admin Control Panel</h1>
+        <p>System Administrator &bull; Monitor &bull; Configure &bull; Analyze</p>
     </div>""", unsafe_allow_html=True)
 
     with st.sidebar:
         st.markdown(f"### 🛡️ {user['full_name']}")
-        st.caption("Role: Administrator")
+        st.caption("Administrator")
+        st.markdown("---")
         if st.button("🚪 Logout", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
             st.rerun()
+        st.markdown("---")
+        st.markdown("**Detection Thresholds**")
+        st.slider("EAR Threshold", 0.15, 0.35, DEFAULT_EAR, 0.01,
+                  help="Eyes closed below this", key="adm_ear")
+        st.slider("MAR Threshold", 0.40, 0.80, DEFAULT_MAR, 0.05,
+                  help="Yawning above this", key="adm_mar")
+        st.slider("Consecutive Frames", 5, 30, DEFAULT_CONSEC, 1, key="adm_consec")
+        st.slider("CNN Confidence", 0.40, 0.90, DEFAULT_CNN, 0.05, key="adm_cnn")
 
-    # Overview stats
+    # Stats
     stats = get_dashboard_stats()
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(f'<div class="admin-stat"><h2 style="color:#4ECDC4">{stats["total_drivers"]}</h2>'
-                f'<p>Registered Drivers</p></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="admin-stat"><h2 style="color:#45B7D1">{stats["total_sessions"]}</h2>'
-                f'<p>Total Sessions</p></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="admin-stat"><h2 style="color:#e63757">{stats["total_alerts"]}</h2>'
-                f'<p>Drowsy Alerts</p></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="admin-stat"><h2 style="color:#f6c343">{stats["total_yawns"]}</h2>'
-                f'<p>Yawns Detected</p></div>', unsafe_allow_html=True)
+    c1.markdown(f'<div class="asc"><h2 style="color:#22c55e">{stats["total_drivers"]}</h2>'
+                '<p>Registered Drivers</p></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="asc"><h2 style="color:#3b82f6">{stats["total_sessions"]}</h2>'
+                '<p>Total Sessions</p></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="asc"><h2 style="color:#ef4444">{stats["total_alerts"]}</h2>'
+                '<p>Drowsy Alerts</p></div>', unsafe_allow_html=True)
+    c4.markdown(f'<div class="asc"><h2 style="color:#eab308">{stats["total_yawns"]}</h2>'
+                '<p>Yawns Detected</p></div>', unsafe_allow_html=True)
 
     st.markdown("---")
-    tab_events, tab_sessions, tab_drivers, tab_db = st.tabs([
-        "🚨 Events Log", "📋 Sessions", "👥 Drivers", "🗄️ Raw Database"
-    ])
-
-    # Driver filter
     drivers = get_all_drivers()
-    driver_options = {"All Drivers": None}
+    d_opts = {"All Drivers": None}
     for d in drivers:
-        driver_options[f"{d['full_name']} (@{d['username']})"] = d["id"]
+        d_opts[f"{d['full_name']} (@{d['username']})"] = d["id"]
 
-    with tab_events:
-        st.markdown("### 🚨 Drowsiness Events Log")
-        sel = st.selectbox("Filter by Driver", list(driver_options.keys()), key="ev_filter")
-        did = driver_options[sel]
-        events = get_driver_events(driver_id=did, limit=500)
+    tab1, tab2, tab3, tab4 = st.tabs(["🚨 Events Log", "📋 Sessions", "👥 Drivers", "🗄️ Raw SQL"])
+
+    with tab1:
+        st.markdown("### 🚨 Drowsiness Events")
+        sel = st.selectbox("Filter by Driver", list(d_opts.keys()), key="ev_f")
+        events = get_driver_events(driver_id=d_opts[sel], limit=500)
         if events:
             df = pd.DataFrame(events)
-            display_cols = ["timestamp", "full_name", "event_type", "ear_value", "mar_value", "score", "consec"]
-            available = [c for c in display_cols if c in df.columns]
-            df_show = df[available].copy()
-            df_show.columns = ["Timestamp", "Driver", "Event", "EAR", "MAR", "Score", "Consec"][:len(available)]
-
-            # Color-code event types
+            cols = ["timestamp", "full_name", "event_type", "ear_value", "mar_value", "score", "consec"]
+            avail = [c for c in cols if c in df.columns]
+            df_show = df[avail].copy()
+            df_show.columns = ["Timestamp", "Driver", "Event", "EAR", "MAR", "Score", "Consec"][:len(avail)]
             st.dataframe(df_show, use_container_width=True, height=400)
-
-            drowsy_count = len(df[df["event_type"] == "drowsy"])
-            yawn_count = len(df[df["event_type"] == "yawn"])
+            dc = len(df[df["event_type"] == "drowsy"])
+            yc = len(df[df["event_type"] == "yawn"])
             st.markdown(f"**Total:** {len(events)} events | "
-                        f"🔴 {drowsy_count} drowsy | 🟡 {yawn_count} yawns")
+                        f"🔴 {dc} drowsy | 🟡 {yc} yawns")
         else:
             st.info("No events recorded yet.")
 
-    with tab_sessions:
+    with tab2:
         st.markdown("### 📋 Session History")
-        sel2 = st.selectbox("Filter by Driver", list(driver_options.keys()), key="sess_filter")
-        did2 = driver_options[sel2]
-        sessions = get_all_sessions(driver_id=did2)
+        sel2 = st.selectbox("Filter by Driver", list(d_opts.keys()), key="ss_f")
+        sessions = get_all_sessions(driver_id=d_opts[sel2])
         if sessions:
             df_s = pd.DataFrame(sessions)
-            display_cols = ["start_time", "end_time", "full_name", "total_frames",
-                            "drowsy_frames", "total_alerts", "total_yawns", "avg_ear", "status"]
-            available = [c for c in display_cols if c in df_s.columns]
-            df_show = df_s[available]
-            st.dataframe(df_show, use_container_width=True, height=400)
+            cols = ["start_time", "end_time", "full_name", "total_frames",
+                    "drowsy_frames", "total_alerts", "total_yawns", "avg_ear", "status"]
+            avail = [c for c in cols if c in df_s.columns]
+            st.dataframe(df_s[avail], use_container_width=True, height=400)
         else:
-            st.info("No sessions recorded yet.")
+            st.info("No sessions yet.")
 
-    with tab_drivers:
+    with tab3:
         st.markdown("### 👥 Registered Drivers")
         if drivers:
-            df_d = pd.DataFrame(drivers)
-            st.dataframe(df_d, use_container_width=True)
+            st.dataframe(pd.DataFrame(drivers), use_container_width=True)
         else:
-            st.info("No drivers registered yet.")
+            st.info("No drivers registered.")
 
-    with tab_db:
-        st.markdown("### 🗄️ Raw Database View")
-        st.caption("Direct SQL query on the database")
-        query = st.text_input("SQL Query", "SELECT * FROM events ORDER BY timestamp DESC LIMIT 50")
+    with tab4:
+        st.markdown("### 🗄️ Raw Database Query")
+        query = st.text_input("SQL", "SELECT * FROM events ORDER BY timestamp DESC LIMIT 50")
         if st.button("Run Query"):
             try:
                 import sqlite3
@@ -511,10 +483,10 @@ def render_admin_dashboard():
                 conn.close()
                 st.dataframe(df_q, use_container_width=True)
             except Exception as e:
-                st.error(f"Query error: {e}")
+                st.error(f"Error: {e}")
 
 
-# ─── Main Router ─────────────────────────────────────────────────────────────
+# ── Router ────────────────────────────────────────────────────────────────────
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
