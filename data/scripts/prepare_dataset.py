@@ -31,7 +31,7 @@ from pathlib import Path
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-RAW_DIR = Path(__file__).resolve().parent.parent / "raw" / "drowsiness-dataset"
+RAW_DIR = Path(__file__).resolve().parent.parent.parent / "dataset"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "processed"
 TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15

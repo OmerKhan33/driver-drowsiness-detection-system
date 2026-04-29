@@ -227,7 +227,7 @@ def run_all_checks() -> dict:
     failed = 0
 
     print("=" * 55)
-    print("  Driver Drowsiness Detection — Sanity Check")
+    print("  Driver Drowsiness Detection - Sanity Check")
     print("=" * 55)
 
     for name, func in checks:
@@ -237,10 +237,10 @@ def run_all_checks() -> dict:
 
         if result["status"] == "passed":
             passed += 1
-            print(f"  ✓ PASSED ({result['time_ms']:.0f}ms)")
+            print(f"  [OK] PASSED ({result['time_ms']:.0f}ms)")
         else:
             failed += 1
-            print(f"  ✗ FAILED ({result['time_ms']:.0f}ms): {result.get('error', 'Unknown')}")
+            print(f"  [FAIL] FAILED ({result['time_ms']:.0f}ms): {result.get('error', 'Unknown')}")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     all_passed = failed == 0
