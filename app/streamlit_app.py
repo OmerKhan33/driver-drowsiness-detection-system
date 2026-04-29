@@ -38,6 +38,7 @@ from src.utils.drowsiness_utils import (
     extract_eye_landmarks,
     extract_mouth_landmarks,
 )
+from src.classification.predict import DrowsinessPredictor
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 
@@ -234,6 +235,12 @@ def render_driver_dashboard():
         st.markdown("---")
         show_lm = st.checkbox("Show Landmarks", True)
         show_ov = st.checkbox("Show Overlay", True)
+        
+        st.markdown("---")
+        st.markdown("**CNN Classification Model**")
+        model_choice = st.selectbox("Select Model", [
+            "MobileNetV2", "CustomCNN", "ResNet18", "ResNet50", "VGG16", "EfficientNet-B0"
+        ])
 
     # Init state
     for key, default in [
@@ -291,18 +298,42 @@ def render_driver_dashboard():
         mar_ch = st.empty()
 
     if st.session_state.running:
+        mp_available = False
+        face_mesh = None
+        
         try:
-            import mediapipe as mp_mod
-            face_mesh = mp_mod.solutions.face_mesh.FaceMesh(
-                max_num_faces=1, refine_landmarks=True,
-                min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        except ImportError:
-            st.error("MediaPipe not installed.")
-            st.stop()
+            # Try importing mediapipe safely
+            import mediapipe as mp
+            if hasattr(mp, "solutions"):
+                face_mesh = mp.solutions.face_mesh.FaceMesh(
+                    max_num_faces=1, refine_landmarks=True,
+                    min_detection_confidence=0.5, min_tracking_confidence=0.5)
+                mp_available = True
+            else:
+                from mediapipe.python.solutions import face_mesh as mp_face_mesh
+                face_mesh = mp_face_mesh.FaceMesh(
+                    max_num_faces=1, refine_landmarks=True,
+                    min_detection_confidence=0.5, min_tracking_confidence=0.5)
+                mp_available = True
+        except Exception as e:
+            st.warning(f"MediaPipe not fully supported on this device ({e}). Falling back to CNN-only mode using OpenCV face detection.")
+        
+        # Load the selected CNN Model
+        try:
+            weights_path = Path(_PROJECT_ROOT) / "models" / "weights" / f"{model_choice}_best.pt"
+            predictor = DrowsinessPredictor(model_name=model_choice, weights_path=str(weights_path))
+        except Exception as e:
+            st.error(f"Failed to load {model_choice}: {e}")
+            predictor = None
+
+        # Fallback Haarcascade if MediaPipe is unavailable
+        face_cascade = None
+        if not mp_available:
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            st.error("Cannot access webcam.")
+            st.error("Cannot access webcam. Make sure your PC's camera is connected and not used by another app.")
             st.session_state.running = False
             st.stop()
 
@@ -316,24 +347,65 @@ def render_driver_dashboard():
             frame = cv2.flip(frame, 1)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w = frame.shape[:2]
-            res = face_mesh.process(rgb)
+            
             ear_v, mar_v = 0.30, 0.40
+            cnn_conf = 0.0
+            
+            if mp_available and face_mesh is not None:
+                res = face_mesh.process(rgb)
+                if res.multi_face_landmarks:
+                    lm = res.multi_face_landmarks[0]
+                    le, re = extract_eye_landmarks(lm, w, h)
+                    mo = extract_mouth_landmarks(lm, w, h)
+                    ear_v = compute_avg_ear(le, re)
+                    mar_v = compute_mar(mo)
+                    if show_lm:
+                        for pts in [le, re]:
+                            pts_i = pts.astype(int)
+                            for i in range(len(pts_i)):
+                                cv2.line(frame, tuple(pts_i[i]),
+                                         tuple(pts_i[(i + 1) % len(pts_i)]), (0, 255, 128), 1)
+                    
+                    # Compute bounding box for CNN
+                    x_min = int(min([p.x for p in lm.landmark]) * w)
+                    y_min = int(min([p.y for p in lm.landmark]) * h)
+                    x_max = int(max([p.x for p in lm.landmark]) * w)
+                    y_max = int(max([p.y for p in lm.landmark]) * h)
+                    
+                    if predictor is not None:
+                        try:
+                            # Pad bounding box
+                            pad_x, pad_y = int((x_max - x_min) * 0.15), int((y_max - y_min) * 0.15)
+                            x1 = max(0, x_min - pad_x)
+                            y1 = max(0, y_min - pad_y)
+                            x2 = min(w, x_max + pad_x)
+                            y2 = min(h, y_max + pad_y)
+                            
+                            pred_res = predictor.predict_from_frame(frame, (x1, y1, x2, y2))
+                            # Only use drowsy confidence
+                            cnn_conf = pred_res["probabilities"]["drowsy"]
+                        except Exception:
+                            cnn_conf = 0.0
+            else:
+                # Fallback to OpenCV Face Detection
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+                if len(faces) > 0:
+                    x, y, w_f, h_f = faces[0]
+                    if predictor is not None:
+                        try:
+                            pred_res = predictor.predict_from_frame(frame, (x, y, x + w_f, y + h_f))
+                            cnn_conf = pred_res["probabilities"]["drowsy"]
+                        except Exception:
+                            cnn_conf = 0.0
+                    
+                    # We can't compute EAR/MAR without landmarks, so simulate drowsy score based heavily on CNN
+                    if cnn_conf > 0.6:
+                        ear_v = 0.15 # simulate closed eye
+                    cv2.rectangle(frame, (x,y), (x+w_f, y+h_f), (255, 0, 0), 2)
 
-            if res.multi_face_landmarks:
-                lm = res.multi_face_landmarks[0]
-                le, re = extract_eye_landmarks(lm, w, h)
-                mo = extract_mouth_landmarks(lm, w, h)
-                ear_v = compute_avg_ear(le, re)
-                mar_v = compute_mar(mo)
-                if show_lm:
-                    for pts in [le, re]:
-                        pts_i = pts.astype(int)
-                        for i in range(len(pts_i)):
-                            cv2.line(frame, tuple(pts_i[i]),
-                                     tuple(pts_i[(i + 1) % len(pts_i)]), (0, 255, 128), 1)
-
-            status = asys.update(ear=ear_v, mar=mar_v, cnn_confidence=0.0)
-            score = compute_drowsiness_score(ear=ear_v, mar=mar_v, cnn_confidence=0.0)
+            status = asys.update(ear=ear_v, mar=mar_v, cnn_confidence=cnn_conf)
+            score = compute_drowsiness_score(ear=ear_v, mar=mar_v, cnn_confidence=cnn_conf)
             level = drowsiness_level(score)
             elapsed = time.perf_counter() - t0
             fps = 1.0 / elapsed if elapsed > 0 else 0
@@ -365,7 +437,7 @@ def render_driver_dashboard():
             sco = "g" if score < 0.4 else ("y" if score < 0.7 else "r")
             ear_ph.markdown(mc("EAR", f"{ear_v:.3f}", ec), unsafe_allow_html=True)
             mar_ph.markdown(mc("MAR", f"{mar_v:.3f}", mco), unsafe_allow_html=True)
-            scr_ph.markdown(mc("Score", f"{score:.2f}", sco), unsafe_allow_html=True)
+            scr_ph.markdown(mc("CNN", f"{cnn_conf:.2f}", sco), unsafe_allow_html=True)
             fps_ph.markdown(mc("FPS", f"{fps:.0f}", "g"), unsafe_allow_html=True)
             con_ph.markdown(mc("Consec", str(status["consecutive_frames"]),
                                "r" if status["is_drowsy"] else "g"), unsafe_allow_html=True)
