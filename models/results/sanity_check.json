@@ -1,0 +1,50 @@
+{
+  "total_checks": 10,
+  "passed": 10,
+  "failed": 0,
+  "all_passed": true,
+  "device": "cpu",
+  "pytorch_version": "2.11.0+cpu",
+  "checks": {
+    "pytorch_import": {
+      "status": "passed",
+      "time_ms": 0.67
+    },
+    "resnet18_forward": {
+      "status": "passed",
+      "time_ms": 324.67
+    },
+    "resnet50_forward": {
+      "status": "passed",
+      "time_ms": 594.71
+    },
+    "vgg16_forward": {
+      "status": "passed",
+      "time_ms": 2932.18
+    },
+    "mobilenetv2_forward": {
+      "status": "passed",
+      "time_ms": 133.03
+    },
+    "efficientnet_b0_forward": {
+      "status": "passed",
+      "time_ms": 191.68
+    },
+    "yolo_inference": {
+      "status": "passed",
+      "time_ms": 2176.19
+    },
+    "haar_cascade": {
+      "status": "passed",
+      "time_ms": 175.05
+    },
+    "transforms_pipeline": {
+      "status": "passed",
+      "time_ms": 7.6
+    },
+    "ear_stability": {
+      "status": "passed",
+      "time_ms": 0.15
+    }
+  }
+}

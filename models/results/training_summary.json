@@ -1,0 +1,32 @@
+{
+  "CustomCNN": {
+    "best_val_acc": 0.5599078341013825,
+    "best_epoch": 6,
+    "training_time_s": 274.9239253997803
+  },
+  "ResNet18": {
+    "best_val_acc": 0.9861751152073732,
+    "best_epoch": 9,
+    "training_time_s": 323.8657019138336
+  },
+  "ResNet50": {
+    "best_val_acc": 1.0,
+    "best_epoch": 11,
+    "training_time_s": 426.8155930042267
+  },
+  "VGG16": {
+    "best_val_acc": 0.9447004608294931,
+    "best_epoch": 9,
+    "training_time_s": 377.86518144607544
+  },
+  "EfficientNet-B0": {
+    "best_val_acc": 0.967741935483871,
+    "best_epoch": 13,
+    "training_time_s": 363.5645670890808
+  },
+  "MobileNetV2": {
+    "best_val_acc": 0.9723502304147466,
+    "best_epoch": 9,
+    "training_time_s": 324.482919216156
+  }
+}

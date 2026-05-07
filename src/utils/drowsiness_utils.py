@@ -9,15 +9,17 @@ import numpy as np
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-EAR_THRESHOLD = 0.25
+EAR_THRESHOLD = 0.18
 MAR_THRESHOLD = 0.60
-EAR_CONSEC_FRAMES = 20
+EAR_CONSEC_FRAMES = 5
 MAR_CONSEC_FRAMES = 15
 
 # MediaPipe face mesh indices
 # (Using 6 landmarks per eye, following Soukupova & Cech model)
-LEFT_EYE_IDX = [362, 385, 387, 263, 373, 380]
-RIGHT_EYE_IDX = [33, 160, 158, 133, 153, 144]
+# Order: p1 (outer corner), p2 (upper-outer), p3 (upper-inner),
+#         p4 (inner corner), p5 (lower-inner), p6 (lower-outer)
+LEFT_EYE_IDX = [263, 387, 385, 362, 380, 373]
+RIGHT_EYE_IDX = [33, 160, 158, 133, 153, 145]
 
 # Using 8 landmarks for the mouth
 MOUTH_IDX = [61, 291, 39, 181, 0, 17, 269, 405]

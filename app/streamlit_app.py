@@ -7,7 +7,8 @@ Run: python -m streamlit run app/streamlit_app.py
 
 import sys
 import time
-from collections import deque
+import threading
+
 from pathlib import Path
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -15,8 +16,10 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 import cv2
+import av
 import pandas as pd
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
 from app.database import (
     authenticate_user,
@@ -40,6 +43,12 @@ from src.utils.drowsiness_utils import (
 )
 from src.classification.predict import DrowsinessPredictor
 
+# ── Thread-safe drowsy flag (from cached module, survives Streamlit re-runs) ──
+# Streamlit re-executes this script top-to-bottom on every refresh, so Events
+# defined HERE would be recreated each time (breaking cross-thread refs).
+# By importing from a separate module, Python's import cache keeps them alive.
+from app._shared import drowsy_event as _drowsy_event, yawn_event as _yawn_event
+
 # ── Page Config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -52,73 +61,124 @@ st.set_page_config(
 # ── CSS ───────────────────────────────────────────────────────────────────────
 
 st.markdown("""<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-* { font-family: 'Inter', sans-serif; }
-.main .block-container { padding-top: 0.8rem; max-width: 1440px; }
-[data-testid="stSidebar"] { background: linear-gradient(180deg, #0a0a1a 0%, #111827 100%); }
-
-/* Header */
-.hdr {
-    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #0f172a 100%);
-    padding: 1.6rem 2.2rem; border-radius: 18px; margin-bottom: 1.2rem;
-    border: 1px solid rgba(59,130,246,0.15);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-    position: relative; overflow: hidden;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+*{font-family:'Inter',sans-serif;}
+html,body,[data-testid="stAppViewContainer"]{background:#060918!important;}
+.main .block-container{padding-top:0.6rem;max-width:1480px;}
+[data-testid="stSidebar"]{
+    background:linear-gradient(195deg,#070b1e 0%,#0d1330 40%,#111c47 100%)!important;
+    border-right:1px solid rgba(99,102,241,0.08);
 }
-.hdr::before {
-    content: ''; position: absolute; top: -50%; right: -30%; width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
-}
-.hdr h1 { color: #f1f5f9; font-size: 1.75rem; font-weight: 800; margin: 0; letter-spacing: -0.5px; }
-.hdr p { color: rgba(148,163,184,0.8); font-size: 0.9rem; margin: 0.25rem 0 0 0; }
+[data-testid="stSidebar"] *{color:#c7d2e8!important;}
 
-/* Metric cards */
-.mc {
-    background: linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,58,95,0.6));
-    border-radius: 16px; padding: 1rem 1.2rem; text-align: center;
-    border: 1px solid rgba(59,130,246,0.1);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-    backdrop-filter: blur(10px); transition: all 0.3s ease;
+/* ─ Animated Header ─ */
+@keyframes shimmer{0%{background-position:200% 50%;}100%{background-position:-200% 50%;}}
+@keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+.hdr{
+    background:linear-gradient(135deg,#0a1128 0%,#1a2755 35%,#162040 65%,#0a1128 100%);
+    padding:1.8rem 2.4rem;border-radius:20px;margin-bottom:1.4rem;
+    border:1px solid rgba(99,102,241,0.12);
+    box-shadow:0 12px 48px rgba(0,0,0,0.5),0 0 0 1px rgba(99,102,241,0.05) inset;
+    position:relative;overflow:hidden;
 }
-.mc:hover { border-color: rgba(59,130,246,0.3); transform: translateY(-1px); }
-.mc .lbl { color: #94a3b8; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
-.mc .val { font-size: 1.6rem; font-weight: 800; margin: 0.2rem 0; letter-spacing: -0.5px; }
-.mc .val.g { color: #22c55e; } .mc .val.y { color: #eab308; } .mc .val.r { color: #ef4444; }
-
-/* Status pill */
-.sp {
-    display: inline-block; padding: 0.45rem 2rem; border-radius: 50px;
-    font-weight: 800; font-size: 0.95rem; letter-spacing: 2px; text-transform: uppercase;
+.hdr::before{
+    content:'';position:absolute;top:-60%;right:-20%;width:500px;height:500px;
+    background:radial-gradient(circle,rgba(99,102,241,0.07) 0%,transparent 65%);
+    animation:float 6s ease-in-out infinite;
 }
-.sp.ok { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 4px 15px rgba(34,197,94,0.3); }
-.sp.wn { background: linear-gradient(135deg, #eab308, #ca8a04); color: #0f172a; box-shadow: 0 4px 15px rgba(234,179,8,0.3); }
-.sp.dg { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; animation: pls 1.2s infinite; box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
-@keyframes pls { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 25px 8px rgba(239,68,68,0.15); } }
-
-/* Login */
-.login-wrap {
-    max-width: 440px; margin: 2rem auto;
-    background: linear-gradient(145deg, rgba(15,23,42,0.95), rgba(30,58,95,0.7));
-    border-radius: 24px; padding: 2.5rem; border: 1px solid rgba(59,130,246,0.12);
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5); backdrop-filter: blur(20px);
+.hdr::after{
+    content:'';position:absolute;bottom:-40%;left:-10%;width:350px;height:350px;
+    background:radial-gradient(circle,rgba(56,189,248,0.05) 0%,transparent 65%);
+    animation:float 8s ease-in-out infinite reverse;
 }
-.login-wrap h2 { color: #f1f5f9; text-align: center; font-weight: 800; font-size: 1.4rem; margin-bottom: 0.3rem; }
-.login-wrap .sub { color: #64748b; text-align: center; font-size: 0.85rem; margin-bottom: 1.5rem; }
-
-/* Admin stat card */
-.asc {
-    background: linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,58,95,0.6));
-    border-radius: 16px; padding: 1.5rem; text-align: center;
-    border: 1px solid rgba(59,130,246,0.1); box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+.hdr h1{
+    color:#f1f5f9;font-size:1.85rem;font-weight:900;margin:0;
+    letter-spacing:-0.5px;position:relative;z-index:1;
+    background:linear-gradient(135deg,#e2e8f0,#93c5fd,#e2e8f0);
+    background-size:400% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    animation:shimmer 6s ease-in-out infinite;
 }
-.asc h2 { font-size: 2.4rem; font-weight: 800; margin: 0; }
-.asc p { color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px; margin: 0.3rem 0 0 0; }
+.hdr p{color:rgba(148,163,184,0.7);font-size:0.85rem;margin:0.3rem 0 0;position:relative;z-index:1;}
 
-/* Idle cam */
-.idle-cam {
-    background: linear-gradient(145deg, rgba(15,23,42,0.9), rgba(30,58,95,0.4));
-    border-radius: 18px; padding: 5rem 2rem; text-align: center;
-    border: 2px dashed rgba(59,130,246,0.15);
+/* ─ Metric Cards ─ */
+.mc{
+    background:linear-gradient(145deg,rgba(13,19,48,0.95),rgba(26,39,85,0.7));
+    border-radius:16px;padding:1.1rem 1.3rem;text-align:center;
+    border:1px solid rgba(99,102,241,0.08);
+    box-shadow:0 4px 24px rgba(0,0,0,0.3),0 0 0 1px rgba(99,102,241,0.03) inset;
+    backdrop-filter:blur(12px);transition:all 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+.mc:hover{border-color:rgba(99,102,241,0.25);transform:translateY(-3px);box-shadow:0 8px 32px rgba(99,102,241,0.1);}
+.mc .lbl{color:#7c8db5;font-size:0.6rem;text-transform:uppercase;letter-spacing:2px;font-weight:700;}
+.mc .val{font-size:1.65rem;font-weight:900;margin:0.2rem 0;letter-spacing:-0.5px;}
+.mc .val.g{color:#34d399;text-shadow:0 0 20px rgba(52,211,153,0.2);}
+.mc .val.y{color:#fbbf24;text-shadow:0 0 20px rgba(251,191,36,0.2);}
+.mc .val.r{color:#f87171;text-shadow:0 0 20px rgba(248,113,113,0.2);}
+
+/* ─ Status Pill ─ */
+@keyframes pls{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4);}50%{box-shadow:0 0 30px 10px rgba(239,68,68,0.12);}}
+@keyframes pulse_ok{0%,100%{box-shadow:0 4px 15px rgba(52,211,153,0.3);}50%{box-shadow:0 4px 25px rgba(52,211,153,0.15);}}
+.sp{
+    display:inline-block;padding:0.5rem 2.2rem;border-radius:50px;
+    font-weight:900;font-size:0.9rem;letter-spacing:2.5px;text-transform:uppercase;
+    transition:all 0.3s ease;
+}
+.sp.ok{background:linear-gradient(135deg,#059669,#10b981);color:#fff;animation:pulse_ok 3s infinite;}
+.sp.wn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#0f172a;box-shadow:0 4px 18px rgba(245,158,11,0.25);}
+.sp.dg{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;animation:pls 1s infinite;}
+
+/* ─ Login ─ */
+.login-wrap{
+    max-width:460px;margin:2.5rem auto;
+    background:linear-gradient(145deg,rgba(13,19,48,0.97),rgba(26,39,85,0.75));
+    border-radius:28px;padding:2.8rem;border:1px solid rgba(99,102,241,0.1);
+    box-shadow:0 24px 72px rgba(0,0,0,0.5),0 0 0 1px rgba(99,102,241,0.05) inset;
+    backdrop-filter:blur(24px);
+}
+.login-wrap h2{
+    color:#f1f5f9;text-align:center;font-weight:900;font-size:1.5rem;margin-bottom:0.3rem;
+    background:linear-gradient(135deg,#e2e8f0,#818cf8);-webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+}
+.login-wrap .sub{color:#64748b;text-align:center;font-size:0.82rem;margin-bottom:1.5rem;}
+
+/* ─ Admin Stat Card ─ */
+.asc{
+    background:linear-gradient(145deg,rgba(13,19,48,0.95),rgba(26,39,85,0.7));
+    border-radius:18px;padding:1.6rem;text-align:center;
+    border:1px solid rgba(99,102,241,0.08);
+    box-shadow:0 6px 28px rgba(0,0,0,0.3);
+    transition:all 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+.asc:hover{transform:translateY(-2px);border-color:rgba(99,102,241,0.2);}
+.asc h2{font-size:2.6rem;font-weight:900;margin:0;letter-spacing:-1px;}
+.asc p{color:#7c8db5;font-size:0.65rem;text-transform:uppercase;letter-spacing:2px;margin:0.4rem 0 0;font-weight:600;}
+
+/* ─ Cam Area ─ */
+.idle-cam{
+    background:linear-gradient(145deg,rgba(13,19,48,0.9),rgba(26,39,85,0.4));
+    border-radius:20px;padding:5rem 2rem;text-align:center;
+    border:2px dashed rgba(99,102,241,0.12);
+}
+
+/* ─ Global Tweaks ─ */
+.stButton>button{
+    background:linear-gradient(135deg,#4f46e5,#6366f1)!important;color:#fff!important;
+    border:none!important;border-radius:12px!important;font-weight:700!important;
+    transition:all 0.3s ease!important;letter-spacing:0.3px!important;
+}
+.stButton>button:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(99,102,241,0.3)!important;}
+.stButton>button[kind="primary"]{background:linear-gradient(135deg,#4f46e5,#7c3aed)!important;}
+div[data-testid="stDataFrame"]{border-radius:12px;overflow:hidden;}
+.stTabs [data-baseweb="tab-list"]{gap:8px;}
+.stTabs [data-baseweb="tab"]{
+    background:rgba(13,19,48,0.6)!important;border-radius:10px!important;
+    border:1px solid rgba(99,102,241,0.06)!important;color:#94a3b8!important;
+    font-weight:600!important;
+}
+.stTabs [aria-selected="true"]{
+    background:linear-gradient(135deg,rgba(79,70,229,0.2),rgba(99,102,241,0.1))!important;
+    border-color:rgba(99,102,241,0.3)!important;color:#e2e8f0!important;
 }
 </style>""", unsafe_allow_html=True)
 
@@ -134,25 +194,27 @@ def sp(level):
     return f'<div style="text-align:center"><span class="sp {c}">{level}</span></div>'
 
 
-def overlay(frame, ear, mar, score, level, fps):
+def overlay(frame, ear, mar, score, level, fps, consec=0):
     h, w = frame.shape[:2]
     ov = frame.copy()
     cv2.rectangle(ov, (0, 0), (w, 50), (10, 10, 25), -1)
     cv2.addWeighted(ov, 0.75, frame, 0.25, 0, frame)
     col = {"ALERT": (94, 234, 34), "MILD": (8, 179, 234), "DROWSY": (68, 68, 239)}.get(level, (94, 234, 34))
     cv2.putText(frame, f"EAR:{ear:.3f}", (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(frame, f"MAR:{mar:.3f}", (155, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(frame, f"Score:{score:.2f}", (298, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(frame, level, (460, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, col, 2)
+    cv2.putText(frame, f"MAR:{mar:.3f}", (140, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(frame, f"S:{score:.2f}", (270, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(frame, f"C:{consec}", (360, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 220, 255), 1)
+    cv2.putText(frame, level, (430, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, col, 2)
     cv2.putText(frame, f"FPS:{fps:.0f}", (w - 95, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
     cv2.rectangle(frame, (0, 0), (w - 1, h - 1), col, 3)
     return frame
 
 
 # Default thresholds (admin can change via DB later)
-DEFAULT_EAR = 0.25
+# 0.23 is forgiving for users whose closed-eye EAR sits at 0.20–0.22 on MediaPipe.
+DEFAULT_EAR = 0.23
 DEFAULT_MAR = 0.60
-DEFAULT_CONSEC = 15
+DEFAULT_CONSEC = 4
 DEFAULT_CNN = 0.65
 
 
@@ -235,7 +297,7 @@ def render_driver_dashboard():
         st.markdown("---")
         show_lm = st.checkbox("Show Landmarks", True)
         show_ov = st.checkbox("Show Overlay", True)
-        
+
         st.markdown("---")
         st.markdown("**CNN Classification Model**")
         model_choice = st.selectbox("Select Model", [
@@ -247,215 +309,413 @@ def render_driver_dashboard():
         ("alert_system", DrowsinessAlertSystem(
             ear_threshold=DEFAULT_EAR, mar_threshold=DEFAULT_MAR,
             consec_frames=DEFAULT_CONSEC, alert_sound=False)),
-        ("ear_hist", deque(maxlen=100)),
-        ("mar_hist", deque(maxlen=100)),
-        ("total_frames", 0), ("drowsy_frames", 0),
-        ("running", False), ("session_id", None), ("last_evt", 0),
+        ("session_id", None),
+        ("last_evt", 0),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
 
-    # Controls
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("▶  Start Monitoring", use_container_width=True, type="primary"):
-            st.session_state.running = True
+    if st.session_state.session_id is None:
+        if st.button("▶ Start New Session (For Logging)", use_container_width=True, type="primary"):
             st.session_state.session_id = start_session(user["user_id"])
-            st.session_state.total_frames = 0
-            st.session_state.drowsy_frames = 0
-            st.session_state.alert_system.reset()
-            st.session_state.ear_hist.clear()
-            st.session_state.mar_hist.clear()
-    with c2:
-        if st.button("⏹  Stop", use_container_width=True):
-            if st.session_state.running and st.session_state.session_id:
+            st.rerun()
+    else:
+        if st.button("⏹ Stop Session", use_container_width=True):
+            if st.session_state.session_id:
                 stats = st.session_state.alert_system.get_stats()
                 end_session(st.session_state.session_id,
-                            st.session_state.total_frames,
-                            st.session_state.drowsy_frames,
-                            stats["total_alerts"], stats["total_yawns"],
+                            0, 0, stats["total_alerts"], stats["total_yawns"],
                             stats["average_ear"], stats["average_mar"])
-            st.session_state.running = False
+                st.session_state.session_id = None
+                st.session_state.alert_system.reset()
+                st.rerun()
 
-    # Layout
-    col_v, col_s = st.columns([3, 1])
-    with col_v:
-        vid = st.empty()
-    with col_s:
-        stat_ph = st.empty()
-        ear_ph = st.empty()
-        mar_ph = st.empty()
-        scr_ph = st.empty()
-        fps_ph = st.empty()
-        con_ph = st.empty()
+    st.markdown("### 📷 Live Camera Feed")
+    st.info("💡 Grant camera permissions. The video runs entirely in your browser "
+            "and sends frames to the server for processing.")
 
-    cc1, cc2 = st.columns(2)
-    with cc1:
-        st.markdown("#### 👁 EAR History")
-        ear_ch = st.empty()
-    with cc2:
-        st.markdown("#### 👄 MAR History")
-        mar_ch = st.empty()
+    # ── Setup MediaPipe (modern Tasks API — works with mediapipe ≥0.10.30) ──
+    # The legacy `mp.solutions.face_mesh` namespace was removed in 0.10.21+,
+    # so we use FaceLandmarker via `mp.tasks.vision`. Same 478-point landmark
+    # set, same indices, just a different entry point.
+    mp_available = False
+    face_landmarker = None
+    mp_module = None
+    try:
+        import mediapipe as mp_module
+        from mediapipe.tasks import python as _mp_python
+        from mediapipe.tasks.python import vision as _mp_vision
 
-    if st.session_state.running:
-        mp_available = False
-        face_mesh = None
-        
-        try:
-            # Try importing mediapipe safely
-            import mediapipe as mp
-            if hasattr(mp, "solutions"):
-                face_mesh = mp.solutions.face_mesh.FaceMesh(
-                    max_num_faces=1, refine_landmarks=True,
-                    min_detection_confidence=0.5, min_tracking_confidence=0.5)
-                mp_available = True
-            else:
-                from mediapipe.python.solutions import face_mesh as mp_face_mesh
-                face_mesh = mp_face_mesh.FaceMesh(
-                    max_num_faces=1, refine_landmarks=True,
-                    min_detection_confidence=0.5, min_tracking_confidence=0.5)
-                mp_available = True
-        except Exception as e:
-            st.warning(f"MediaPipe not fully supported on this device ({e}). Falling back to CNN-only mode using OpenCV face detection.")
-        
-        # Load the selected CNN Model
-        try:
-            weights_path = Path(_PROJECT_ROOT) / "models" / "weights" / f"{model_choice}_best.pt"
-            predictor = DrowsinessPredictor(model_name=model_choice, weights_path=str(weights_path))
-        except Exception as e:
-            st.error(f"Failed to load {model_choice}: {e}")
-            predictor = None
+        _model_path = Path(_PROJECT_ROOT) / "models" / "face_landmarker.task"
+        if _model_path.exists():
+            _options = _mp_vision.FaceLandmarkerOptions(
+                base_options=_mp_python.BaseOptions(model_asset_path=str(_model_path)),
+                num_faces=1,
+                min_face_detection_confidence=0.5,
+                min_face_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+                running_mode=_mp_vision.RunningMode.IMAGE,
+            )
+            face_landmarker = _mp_vision.FaceLandmarker.create_from_options(_options)
+            mp_available = True
+            print(f"[INIT] FaceLandmarker loaded from {_model_path.name}")
+        else:
+            print(f"[INIT] Model file not found: {_model_path} — falling back to Haar")
+    except Exception as e:
+        print(f"[INIT] MediaPipe init failed: {e!r} — falling back to Haar")
 
-        # Fallback Haarcascade if MediaPipe is unavailable
-        face_cascade = None
-        if not mp_available:
-            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    # Adapter so extract_*_landmarks() (which expects the legacy
+    # `face_landmarks.landmark[idx].x` interface) still works on the new
+    # `List[NormalizedLandmark]` returned by FaceLandmarker.
+    class _LMAdapter:
+        __slots__ = ("landmark",)
 
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            st.error("Cannot access webcam. Make sure your PC's camera is connected and not used by another app.")
-            st.session_state.running = False
-            st.stop()
+        def __init__(self, lm_list):
+            self.landmark = lm_list
 
-        asys = st.session_state.alert_system
+    try:
+        weights_path = Path(_PROJECT_ROOT) / "models" / "weights" / f"{model_choice}_best.pt"
+        predictor = DrowsinessPredictor(model_name=model_choice, weights_path=str(weights_path))
+    except Exception:
+        predictor = None
 
-        while st.session_state.running:
-            t0 = time.perf_counter()
-            ret, frame = cap.read()
-            if not ret:
-                break
-            frame = cv2.flip(frame, 1)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w = frame.shape[:2]
-            
-            ear_v, mar_v = 0.30, 0.40
-            cnn_conf = 0.0
-            
-            if mp_available and face_mesh is not None:
-                res = face_mesh.process(rgb)
-                if res.multi_face_landmarks:
-                    lm = res.multi_face_landmarks[0]
-                    le, re = extract_eye_landmarks(lm, w, h)
-                    mo = extract_mouth_landmarks(lm, w, h)
-                    ear_v = compute_avg_ear(le, re)
-                    mar_v = compute_mar(mo)
-                    if show_lm:
-                        for pts in [le, re]:
-                            pts_i = pts.astype(int)
-                            for i in range(len(pts_i)):
-                                cv2.line(frame, tuple(pts_i[i]),
-                                         tuple(pts_i[(i + 1) % len(pts_i)]), (0, 255, 128), 1)
-                    
-                    # Compute bounding box for CNN
-                    x_min = int(min([p.x for p in lm.landmark]) * w)
-                    y_min = int(min([p.y for p in lm.landmark]) * h)
-                    x_max = int(max([p.x for p in lm.landmark]) * w)
-                    y_max = int(max([p.y for p in lm.landmark]) * h)
-                    
-                    if predictor is not None:
-                        try:
-                            # Pad bounding box
-                            pad_x, pad_y = int((x_max - x_min) * 0.15), int((y_max - y_min) * 0.15)
-                            x1 = max(0, x_min - pad_x)
-                            y1 = max(0, y_min - pad_y)
-                            x2 = min(w, x_max + pad_x)
-                            y2 = min(h, y_max + pad_y)
-                            
-                            pred_res = predictor.predict_from_frame(frame, (x1, y1, x2, y2))
-                            # Only use drowsy confidence
-                            cnn_conf = pred_res["probabilities"]["drowsy"]
-                        except Exception:
-                            cnn_conf = 0.0
-            else:
-                # Fallback to OpenCV Face Detection
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-                if len(faces) > 0:
-                    x, y, w_f, h_f = faces[0]
-                    if predictor is not None:
-                        try:
-                            pred_res = predictor.predict_from_frame(frame, (x, y, x + w_f, y + h_f))
-                            cnn_conf = pred_res["probabilities"]["drowsy"]
-                        except Exception:
-                            cnn_conf = 0.0
-                    
-                    # We can't compute EAR/MAR without landmarks, so simulate drowsy score based heavily on CNN
-                    if cnn_conf > 0.6:
-                        ear_v = 0.15 # simulate closed eye
-                    cv2.rectangle(frame, (x,y), (x+w_f, y+h_f), (255, 0, 0), 2)
+    face_cascade = None
+    if not mp_available:
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-            status = asys.update(ear=ear_v, mar=mar_v, cnn_confidence=cnn_conf)
-            score = compute_drowsiness_score(ear=ear_v, mar=mar_v, cnn_confidence=cnn_conf)
-            level = drowsiness_level(score)
-            elapsed = time.perf_counter() - t0
-            fps = 1.0 / elapsed if elapsed > 0 else 0
+    asys = st.session_state.alert_system
+    # Force-apply latest defaults each render so a stale alert_system from a
+    # previous session_state still picks up new thresholds.
+    asys.ear_threshold = DEFAULT_EAR
+    asys.mar_threshold = DEFAULT_MAR
+    asys.consec_frames_threshold = DEFAULT_CONSEC
 
-            st.session_state.ear_hist.append(ear_v)
-            st.session_state.mar_hist.append(mar_v)
-            st.session_state.total_frames += 1
+    session_id = st.session_state.session_id
+    user_id = user["user_id"]
+    last_evt = [st.session_state.last_evt]
+    lock = threading.Lock()
+    cached_result = [{"ear": 0.30, "mar": 0.40, "cnn": 0.0,
+                      "score": 0.0, "level": "ALERT", "consec": 0}]
+    # EMA state for EAR / MAR — None means "no smoothed value yet"
+    ema_state = {"ear": None, "mar": None}
+    EMA_ALPHA = 0.55  # higher = more responsive, lower = smoother
+
+    # CLAHE for improving eye region contrast (helps in low-light)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
+    def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
+        t0 = time.perf_counter()
+        img = frame.to_ndarray(format="bgr24")
+        img = cv2.flip(img, 1)
+        h, w = img.shape[:2]
+
+        # Process EVERY frame so consec_frames accumulates at full FPS;
+        # detection used to skip every 2nd frame which doubled the time
+        # needed before the alarm could fire.
+        proc_scale = 0.75 if w > 480 else 1.0
+        if proc_scale < 1.0:
+            proc_img = cv2.resize(img, None, fx=proc_scale, fy=proc_scale)
+        else:
+            proc_img = img
+        ph, pw = proc_img.shape[:2]
+
+        # Apply CLAHE to improve contrast for eye detection
+        lab = cv2.cvtColor(proc_img, cv2.COLOR_BGR2LAB)
+        lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+        proc_enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        rgb = cv2.cvtColor(proc_enhanced, cv2.COLOR_BGR2RGB)
+
+        raw_ear, raw_mar = None, None
+        cnn_conf = 0.0
+        face_detected = False
+
+        if mp_available and face_landmarker is not None:
+            try:
+                mp_image = mp_module.Image(image_format=mp_module.ImageFormat.SRGB, data=rgb)
+                res = face_landmarker.detect(mp_image)
+            except Exception:
+                res = None
+            if res is not None and res.face_landmarks:
+                face_detected = True
+                lm = _LMAdapter(res.face_landmarks[0])
+                le, re = extract_eye_landmarks(lm, pw, ph)
+                mo = extract_mouth_landmarks(lm, pw, ph)
+                raw_ear = compute_avg_ear(le, re)
+                raw_mar = compute_mar(mo)
+
+                if show_lm:
+                    scale_x = w / pw
+                    scale_y = h / ph
+                    for pts in [le, re]:
+                        pts_orig = (pts * [scale_x, scale_y]).astype(int)
+                        for i in range(len(pts_orig)):
+                            cv2.line(img, tuple(pts_orig[i]),
+                                     tuple(pts_orig[(i + 1) % len(pts_orig)]),
+                                     (0, 255, 128), 1)
+                            cv2.circle(img, tuple(pts_orig[i]), 2,
+                                       (100, 255, 200), -1)
+
+                x_min = int(min(p.x for p in lm.landmark) * pw)
+                y_min = int(min(p.y for p in lm.landmark) * ph)
+                x_max = int(max(p.x for p in lm.landmark) * pw)
+                y_max = int(max(p.y for p in lm.landmark) * ph)
+
+                if predictor is not None:
+                    try:
+                        pad_x = int((x_max - x_min) * 0.15)
+                        pad_y = int((y_max - y_min) * 0.15)
+                        x1 = max(0, x_min - pad_x)
+                        y1 = max(0, y_min - pad_y)
+                        x2 = min(pw, x_max + pad_x)
+                        y2 = min(ph, y_max + pad_y)
+                        pred_res = predictor.predict_from_frame(
+                            proc_img, (x1, y1, x2, y2))
+                        cnn_conf = pred_res["probabilities"]["drowsy"]
+                    except Exception:
+                        pass
+        else:
+            gray = cv2.cvtColor(proc_img, cv2.COLOR_BGR2GRAY)
+            gray = clahe.apply(gray)
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            if len(faces) > 0:
+                face_detected = True
+                x, y, w_f, h_f = faces[0]
+                if predictor is not None:
+                    try:
+                        pred_res = predictor.predict_from_frame(
+                            proc_img, (x, y, x + w_f, y + h_f))
+                        cnn_conf = pred_res["probabilities"]["drowsy"]
+                    except Exception:
+                        pass
+                # Without MediaPipe we can't get EAR/MAR — synthesize from CNN
+                if cnn_conf > 0.6:
+                    raw_ear = 0.10
+                    raw_mar = 0.40
+                else:
+                    raw_ear = 0.30
+                    raw_mar = 0.40
+                sx, sy = w / pw, h / ph
+                cv2.rectangle(img,
+                              (int(x * sx), int(y * sy)),
+                              (int((x + w_f) * sx), int((y + h_f) * sy)),
+                              (255, 0, 0), 2)
+
+        # ── EMA smoothing — only update when a face is actually detected ──
+        if face_detected and raw_ear is not None and raw_mar is not None:
+            prev_ear = ema_state["ear"]
+            prev_mar = ema_state["mar"]
+            ema_state["ear"] = raw_ear if prev_ear is None else (EMA_ALPHA * raw_ear + (1 - EMA_ALPHA) * prev_ear)
+            ema_state["mar"] = raw_mar if prev_mar is None else (EMA_ALPHA * raw_mar + (1 - EMA_ALPHA) * prev_mar)
+            ear_v = ema_state["ear"]
+            mar_v = ema_state["mar"]
+        else:
+            # No face — reset smoothing so a brief glance away doesn't poison the EMA
+            ema_state["ear"] = None
+            ema_state["mar"] = None
+            ear_v = 0.30
+            mar_v = 0.40
+
+        # Thread-safe update
+        with lock:
+            status = asys.update(ear=ear_v, mar=mar_v,
+                                 cnn_confidence=cnn_conf)
+            score = compute_drowsiness_score(
+                ear=ear_v, mar=mar_v, cnn_confidence=cnn_conf)
+            score_level = drowsiness_level(score)
+
+            # The displayed level must follow the alert system's authoritative
+            # flags — without a CNN signal the score caps around 0.50 (MILD)
+            # even with eyes fully shut, but `is_drowsy` (consec frames over
+            # threshold) is the truth source for whether to alarm.
             if status["is_drowsy"]:
-                st.session_state.drowsy_frames += 1
+                level = "DROWSY"
+            elif status["is_yawning"] and score_level == "ALERT":
+                level = "MILD"
+            else:
+                level = score_level
+
+            cached_result[0] = {"ear": ear_v, "mar": mar_v,
+                                "cnn": cnn_conf, "score": score,
+                                "level": level,
+                                "consec": status["consecutive_frames"]}
 
             now = time.time()
-            if now - st.session_state.last_evt > 2 and st.session_state.session_id:
+            if session_id and (now - last_evt[0]) > 2:
+                logged = False
                 if status["is_drowsy"]:
-                    log_event(st.session_state.session_id, user["user_id"],
-                              "drowsy", ear_v, mar_v, score, status["consecutive_frames"])
-                    st.session_state.last_evt = now
-                elif status["is_yawning"]:
-                    log_event(st.session_state.session_id, user["user_id"],
-                              "yawn", ear_v, mar_v, score, status["consecutive_frames"])
-                    st.session_state.last_evt = now
+                    log_event(session_id, user_id, "drowsy",
+                              ear_v, mar_v, score,
+                              status["consecutive_frames"])
+                    logged = True
+                if status["is_yawning"]:
+                    log_event(session_id, user_id, "yawn",
+                              ear_v, mar_v, score,
+                              status["consecutive_frames"])
+                    logged = True
+                if logged:
+                    last_evt[0] = now
 
-            if show_ov:
-                frame = overlay(frame, ear_v, mar_v, score, level, fps)
+            # Set shared flag for alarm (thread-safe Event)
+            if status["is_drowsy"]:
+                _drowsy_event.set()
+            else:
+                _drowsy_event.clear()
+            if status["is_yawning"]:
+                _yawn_event.set()
+            else:
+                _yawn_event.clear()
 
-            vid.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
-            stat_ph.markdown(sp(level), unsafe_allow_html=True)
-            ec = "g" if ear_v > DEFAULT_EAR else "r"
-            mco = "g" if mar_v < DEFAULT_MAR else "y"
-            sco = "g" if score < 0.4 else ("y" if score < 0.7 else "r")
-            ear_ph.markdown(mc("EAR", f"{ear_v:.3f}", ec), unsafe_allow_html=True)
-            mar_ph.markdown(mc("MAR", f"{mar_v:.3f}", mco), unsafe_allow_html=True)
-            scr_ph.markdown(mc("CNN", f"{cnn_conf:.2f}", sco), unsafe_allow_html=True)
-            fps_ph.markdown(mc("FPS", f"{fps:.0f}", "g"), unsafe_allow_html=True)
-            con_ph.markdown(mc("Consec", str(status["consecutive_frames"]),
-                               "r" if status["is_drowsy"] else "g"), unsafe_allow_html=True)
-            if len(st.session_state.ear_hist) > 2:
-                ear_ch.line_chart(list(st.session_state.ear_hist), height=140)
-                mar_ch.line_chart(list(st.session_state.mar_hist), height=140)
-            time.sleep(0.01)
-        cap.release()
-    else:
-        vid.markdown("""<div class="idle-cam">
-            <p style="font-size:3.5rem;margin:0;">📹</p>
-            <p style="color:#94a3b8;font-size:1.1rem;margin-top:1rem;">
-            Click <strong>Start Monitoring</strong> to begin</p>
-        </div>""", unsafe_allow_html=True)
-        stat_ph.markdown(sp("ALERT"), unsafe_allow_html=True)
-        for ph in [ear_ph, mar_ph, scr_ph, fps_ph]:
-            ph.markdown(mc("--", "--", "g"), unsafe_allow_html=True)
-        con_ph.markdown(mc("Consec", "0", "g"), unsafe_allow_html=True)
+        cr = cached_result[0]
+        elapsed = time.perf_counter() - t0
+        fps = 1.0 / elapsed if elapsed > 0 else 0
+        if show_ov:
+            img = overlay(img, cr["ear"], cr["mar"],
+                          cr["score"], cr["level"], fps,
+                          cr.get("consec", 0))
+
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    webrtc_ctx = webrtc_streamer(
+        key="drowsiness-cam",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=RTCConfiguration(
+            {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
+        video_frame_callback=video_frame_callback,
+        media_stream_constraints={
+            "video": {"width": {"ideal": 640}, "height": {"ideal": 480},
+                      "frameRate": {"ideal": 15}},
+            "audio": False},
+        async_processing=True,
+    )
+
+    # ── Metrics display (updated via auto-refresh) ──
+    if webrtc_ctx.state.playing:
+        # Read thread-safe flags (NOT session_state — that's not thread-safe)
+        is_drowsy_now = _drowsy_event.is_set()
+        is_yawning_now = _yawn_event.is_set()
+
+        # Auto-refresh so the main thread polls the drowsy flag.
+        # 1000 ms gives a tighter alarm cadence than the previous 1500 ms.
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=1000, limit=0, key="alarm_refresh")
+
+        cr = cached_result[0]
+        ear_c = "r" if cr["ear"] < DEFAULT_EAR else "g"
+        mar_c = "r" if cr["mar"] > DEFAULT_MAR else "g"
+        level = cr["level"]
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.markdown(mc("EAR", f"{cr['ear']:.3f}", ear_c), unsafe_allow_html=True)
+        m2.markdown(mc("MAR", f"{cr['mar']:.3f}", mar_c), unsafe_allow_html=True)
+        m3.markdown(mc("Score", f"{cr['score']:.2f}", "r" if cr['score'] > 0.6 else "g"),
+                    unsafe_allow_html=True)
+        m4.markdown(sp(level), unsafe_allow_html=True)
+
+        # ── Browser-side alarm (Web Audio API) ──
+        # Beeps are scheduled directly on the AudioContext clock, NOT via
+        # setInterval / setTimeout. The streamlit auto-refresh destroys this
+        # iframe every ~1s, which would kill any JS timers; but the
+        # AudioContext lives on `window.parent` and survives, so already-
+        # scheduled audio events fire correctly. Each iframe load schedules
+        # ~1s worth of beeps if alarm is active — yielding a continuous tone.
+        # Three statuses: DROWSY (urgent — high beeps), YAWN (lower beeps),
+        # OK (silent).
+        if is_drowsy_now:
+            alarm_status = "DROWSY"
+        elif is_yawning_now:
+            alarm_status = "YAWN"
+        else:
+            alarm_status = "OK"
+        import streamlit.components.v1 as components
+        components.html(f"""
+        <div id="drowsi-status" style="display:none">{alarm_status}</div>
+        <div id="alarm-btn-wrap" style="text-align:center;margin:8px 0;">
+            <button id="enable-sound-btn" onclick="initAudio()" style="
+                background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;
+                border:none;border-radius:12px;padding:10px 28px;font-size:14px;
+                font-weight:700;cursor:pointer;letter-spacing:0.5px;
+                box-shadow:0 4px 15px rgba(99,102,241,0.3);
+            ">🔊 Click to Enable Alarm Sound</button>
+        </div>
+        <script>
+        var win = window.parent || window;
+
+        function _scheduleBeep(ctx, whenSec, freq, duration) {{
+            try {{
+                var startT = ctx.currentTime + whenSec;
+                var osc = ctx.createOscillator();
+                var gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                osc.type = 'square';
+                gain.gain.setValueAtTime(0.0001, startT);
+                gain.gain.linearRampToValueAtTime(0.45, startT + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, startT + duration);
+                osc.start(startT);
+                osc.stop(startT + duration + 0.05);
+            }} catch(e) {{ console.error('Beep schedule error:', e); }}
+        }}
+
+        function _beepAt(whenSec, freq, duration) {{
+            var ctx = win._drowsiAudioCtx;
+            if (!ctx) return;
+            // Browsers (esp. Chrome) auto-suspend AudioContext after the tab
+            // is backgrounded. Resume each call so the alarm survives.
+            if (ctx.state === 'suspended') {{
+                ctx.resume().then(function() {{
+                    _scheduleBeep(ctx, whenSec, freq, duration);
+                }}).catch(function(e) {{ console.error('Resume failed:', e); }});
+            }} else {{
+                _scheduleBeep(ctx, whenSec, freq, duration);
+            }}
+        }}
+
+        function initAudio() {{
+            // Runs on user click — satisfies browser autoplay policy.
+            // Create the AudioContext on the parent window so it survives
+            // iframe destruction during auto-refresh.
+            if (!win._drowsiAudioCtx) {{
+                win._drowsiAudioCtx = new (win.AudioContext || win.webkitAudioContext)();
+            }}
+            if (win._drowsiAudioCtx.state === 'suspended') {{
+                win._drowsiAudioCtx.resume();
+            }}
+            win._drowsiSoundEnabled = true;
+            // Confirmation chirp so the user knows audio is working
+            _beepAt(0.0, 440, 0.12);
+            _beepAt(0.15, 880, 0.18);
+            var wrap = document.getElementById('alarm-btn-wrap');
+            if (wrap) wrap.innerHTML = '<span style="color:#34d399;font-size:13px;font-weight:600;">✓ Alarm Sound Enabled</span>';
+        }}
+
+        // If sound was already enabled in a previous render, hide button
+        if (win._drowsiSoundEnabled) {{
+            var wrap = document.getElementById('alarm-btn-wrap');
+            if (wrap) wrap.innerHTML = '<span style="color:#34d399;font-size:13px;font-weight:600;">✓ Alarm Sound Enabled</span>';
+        }}
+
+        // ── Schedule alarm beeps based on status ──
+        // Beeps are queued on the AudioContext clock — they play even if
+        // this iframe is destroyed by the next auto-refresh.
+        var el = document.getElementById('drowsi-status');
+        var status = el ? el.textContent.trim() : 'OK';
+        if (win._drowsiSoundEnabled) {{
+            if (status === 'DROWSY') {{
+                // Urgent two-tone alarm — 4 beeps over 1s
+                _beepAt(0.00, 880,  0.15);
+                _beepAt(0.25, 1100, 0.15);
+                _beepAt(0.50, 880,  0.15);
+                _beepAt(0.75, 1100, 0.15);
+            }} else if (status === 'YAWN') {{
+                // Lower-pitched warning — 2 beeps over 1s
+                _beepAt(0.00, 660, 0.20);
+                _beepAt(0.50, 660, 0.20);
+            }}
+        }}
+        </script>
+        """, height=55)
 
 
 # ── Admin Dashboard ───────────────────────────────────────────────────────────

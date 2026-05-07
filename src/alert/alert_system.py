@@ -79,6 +79,8 @@ class DrowsinessAlertSystem:
         self._mar_history = []
         self._alert_log = []
         self._session_start = time.time()
+        self._last_sound_time = 0.0
+        self._sound_throttle_s = 0.6
 
         # Sound system initialization
         self._sound_initialized = False
@@ -159,8 +161,11 @@ class DrowsinessAlertSystem:
         else:
             self.consecutive_frames = max(0, self.consecutive_frames - 1)
 
-        # Update drowsy state
-        self._is_drowsy = self.consecutive_frames >= self.consec_frames_threshold
+        # Update drowsy state with hysteresis so the flag doesn't flicker
+        if self.consecutive_frames >= self.consec_frames_threshold:
+            self._is_drowsy = True
+        elif self.consecutive_frames == 0:
+            self._is_drowsy = False
 
         # Compute drowsiness score
         safe_ear = ear if ear is not None else 0.30
@@ -229,8 +234,9 @@ class DrowsinessAlertSystem:
             f"Consec: {self.consecutive_frames}"
         )
 
-        # Play sound
-        if self._sound_initialized:
+        # Play sound (throttled so we don't spawn an overlapping beep every frame)
+        if self._sound_initialized and (timestamp - self._last_sound_time) >= self._sound_throttle_s:
+            self._last_sound_time = timestamp
             self._play_beep(alert_type)
 
     def _play_beep(self, alert_type: str = "drowsy") -> None:

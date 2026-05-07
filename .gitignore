@@ -1,8 +1,9 @@
 # Data & models (too large for GitHub)
 dataset/
-data/raw/
+data/
 models/weights/*.pt
 models/weights/*.h5
+yolo*.pt
 
 # Python
 __pycache__/
@@ -23,3 +24,9 @@ Thumbs.db
 
 # MLflow
 mlruns/
+
+# Backups & editor cruft
+*.bak
+
+# Tooling / agent state
+.claude/

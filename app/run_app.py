@@ -55,8 +55,7 @@ def main():
     ]
     proc = subprocess.Popen(
         streamlit_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # stdout and stderr will go to terminal directly
     )
 
     # Wait for Streamlit to start
