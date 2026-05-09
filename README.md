@@ -1,340 +1,327 @@
-# 🚗 Driver Drowsiness Detection & Alertness System
+# Driver Drowsiness Detection & Alertness System
 
 [![CI/CD Pipeline](https://github.com/OmerKhan33/driver-drowsiness-detection-system/actions/workflows/ci.yml/badge.svg)](https://github.com/OmerKhan33/driver-drowsiness-detection-system/actions/workflows/ci.yml)
 
-> A real-time, end-to-end driver drowsiness detection system using YOLO face detection, CNN-based classification, and physiological signal analysis (EAR/MAR) to alert drowsy drivers and prevent accidents.
-
-![Demo GIF](models/results/demo_placeholder.gif)
+> A real-time, end-to-end driver drowsiness detection system combining CNN-based classification, MediaPipe facial-landmark physiological signals (EAR / MAR), and a piercing audio alarm. Ships with a role-based Streamlit web app, SQLite event logging, and a Docker image for one-command deployment.
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 - [Project Overview](#project-overview)
 - [Pipeline Architecture](#pipeline-architecture)
 - [Tech Stack](#tech-stack)
 - [Repository Structure](#repository-structure)
 - [Quick Start](#quick-start)
+- [Running with Docker](#running-with-docker)
 - [Dataset Setup](#dataset-setup)
 - [Model Comparison Results](#model-comparison-results)
 - [GitHub Actions Pipeline](#github-actions-pipeline)
 - [File Descriptions](#file-descriptions)
-- [Results](#results)
 - [Future Work](#future-work)
 - [License](#license)
 
 ---
 
-## 🎯 Project Overview
+## Project Overview
 
-**Problem Statement:** Driver drowsiness is a leading cause of road accidents worldwide. The National Highway Traffic Safety Administration (NHTSA) estimates that drowsy driving causes over 100,000 crashes annually in the US alone.
+**Problem.** Drowsy driving causes over 100,000 crashes annually in the US alone (NHTSA). A reliable, low-latency in-cabin monitor that runs on commodity hardware can flag the dangerous state before the driver loses control.
 
-**Solution:** This system provides a multi-signal approach to drowsiness detection:
+**Solution — multi-signal fusion:**
 
-1. **Face Detection** — Uses YOLO (v8, v9, v11, v12) to locate the driver's face in real-time video frames.
-2. **CNN Classification** — Classifies detected faces as ALERT or DROWSY using fine-tuned deep learning architectures (ResNet, EfficientNet, MobileNet, VGG, CustomCNN).
-3. **Physiological Signals** — Computes Eye Aspect Ratio (EAR) and Mouth Aspect Ratio (MAR) via MediaPipe face landmarks for secondary drowsiness confirmation.
-4. **Alert System** — Triggers audio and visual alerts when drowsiness is detected over consecutive frames.
+1. **Face landmarks** — MediaPipe FaceLandmarker (Tasks API, 478 points) locates eyes and mouth on every frame.
+2. **Physiological signals** — Eye Aspect Ratio (EAR) and Mouth Aspect Ratio (MAR) are computed from landmarks and exponentially smoothed.
+3. **CNN classification** — A fine-tuned CNN (selectable from 6 backbones) produces an independent drowsy probability from the cropped face.
+4. **Drowsiness scoring** — EAR, MAR, and CNN confidence are fused into a single score; a state machine over consecutive frames triggers the alarm.
+5. **Alert system** — Browser-side WebAudio yelp siren (frequency-sweeping 800 → 1600 Hz) — the same pattern emergency vehicles use, designed to disrupt drowsy attention.
 
----
-
-## 🔄 Pipeline Architecture
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌───────────────────┐
-│  Webcam /    │     │   YOLO Face      │     │  CNN Classifier   │
-│  Video Feed  │────▶│   Detector       │────▶│  (Alert/Drowsy)   │
-│              │     │  (v8/v9/v11/v12) │     │  ResNet/EfficNet  │
-└─────────────┘     └──────────────────┘     └───────────────────┘
-                            │                          │
-                            ▼                          ▼
-                    ┌──────────────────┐     ┌───────────────────┐
-                    │  MediaPipe Face  │     │  Drowsiness Score │
-                    │  Landmarks       │     │  Computation      │
-                    │  (468 points)    │     │  (Weighted Combo) │
-                    └──────────────────┘     └───────────────────┘
-                            │                          │
-                            ▼                          ▼
-                    ┌──────────────────┐     ┌───────────────────┐
-                    │  EAR + MAR       │     │  Alert System     │
-                    │  Calculation     │────▶│  (Audio + Visual) │
-                    └──────────────────┘     └───────────────────┘
-```
+A **Haar cascade fallback** kicks in automatically when MediaPipe is unavailable, so the app degrades gracefully.
 
 ---
 
-## 🛠️ Tech Stack
+## Pipeline Architecture
+
+```
+┌──────────────────┐     ┌──────────────────────┐
+│  Browser Webcam  │     │   MediaPipe Face     │
+│  (streamlit-     │────▶│   Landmarker         │
+│   webrtc)        │     │   (478 landmarks)    │
+└──────────────────┘     └──────────┬───────────┘
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              ▼                     ▼                     ▼
+      ┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
+      │  EAR (eyes)  │     │  MAR (mouth) │     │  CNN Classifier │
+      │  per-frame   │     │  per-frame   │     │  (6 backbones)  │
+      └──────┬───────┘     └──────┬───────┘     └────────┬────────┘
+             └─────────────┬──────┴───────────────┬──────┘
+                           ▼                      ▼
+                  ┌──────────────────┐  ┌────────────────────┐
+                  │  EMA smoothing   │  │ Drowsiness score   │
+                  │  + state machine │  │ (weighted fusion)  │
+                  └────────┬─────────┘  └────────┬───────────┘
+                           ▼                     ▼
+                  ┌──────────────────────────────────────┐
+                  │  Alert: yelp siren + visual overlay  │
+                  │       SQLite event logging           │
+                  └──────────────────────────────────────┘
+```
+
+---
+
+## Tech Stack
 
 | Category          | Technology                                      |
-|-------------------|------------------------------------------------|
+|-------------------|-------------------------------------------------|
 | Language          | Python 3.12                                     |
 | Deep Learning     | PyTorch, Torchvision                            |
-| Face Detection    | Ultralytics YOLOv8, v9, v11, v12                |
-| Face Landmarks    | MediaPipe                                       |
-| Image Processing  | OpenCV (cv2)                                    |
-| Metrics           | Scikit-learn                                    |
-| Visualization     | Matplotlib, Seaborn                             |
-| Web App           | Streamlit                                       |
+| Face Landmarks    | MediaPipe Tasks API (FaceLandmarker)            |
+| Image Processing  | OpenCV, CLAHE                                   |
+| Web App           | Streamlit, streamlit-webrtc, streamlit-autorefresh |
+| Storage           | SQLite (auth, sessions, events)                 |
+| Audio Alarm       | Browser WebAudio API (yelp siren)               |
+| Remote Access     | pyngrok                                         |
 | Testing           | pytest, pytest-cov                              |
 | Linting           | flake8, black, isort                            |
-| CI/CD             | GitHub Actions                                  |
-| Containerization  | Docker                                          |
+| CI/CD             | GitHub Actions (lint → test → model-check + docker-build) |
+| Containerization  | Docker (multi-stage, CPU-only PyTorch)          |
 | Experiment Track  | MLflow                                          |
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 driver-drowsiness-detection-system/
 │
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                  ← CI/CD pipeline (lint → test → model-check)
-│
-├── data/
-│   ├── raw/
-│   │   └── sample_frames/          ← Sample frames for testing
-│   ├── processed/
-│   │   ├── train/
-│   │   │   ├── alert/              ← Alert class training images
-│   │   │   └── drowsy/             ← Drowsy class training images
-│   │   ├── val/
-│   │   │   ├── alert/
-│   │   │   └── drowsy/
-│   │   └── test/
-│   │       ├── alert/
-│   │       └── drowsy/
-│   └── scripts/
-│       └── prepare_dataset.py      ← Dataset preparation from Kaggle download
-│
-├── notebooks/
-│   └── model_comparison.ipynb      ← Full model comparison (YOLO + CNN)
-│
-├── src/
-│   ├── __init__.py
-│   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── preprocessing.py        ← Image transforms & frame utilities
-│   │   ├── drowsiness_utils.py     ← EAR/MAR computation & scoring
-│   │   └── sanity_check.py         ← CI model verification script
-│   ├── detection/
-│   │   ├── __init__.py
-│   │   └── face_detector.py        ← YOLO & Haar face detectors
-│   ├── classification/
-│   │   ├── __init__.py
-│   │   ├── model_builder.py        ← CNN architecture builder
-│   │   ├── train.py                ← Training loop with AMP & early stopping
-│   │   └── predict.py              ← Inference predictor class
-│   └── alert/
-│       ├── __init__.py
-│       └── alert_system.py         ← Alert system with sound & visuals
-│
-├── models/
-│   ├── weights/                    ← Saved model weights (.pt)
-│   └── results/                    ← Metrics, plots, CSVs
+│       └── ci.yml                  ← lint → (test → model-check) + docker-build
 │
 ├── app/
-│   └── main.py                     ← Streamlit real-time demo app
+│   ├── streamlit_app.py            ← Main Streamlit web app (role-based UI)
+│   ├── run_app.py                  ← Launcher with optional ngrok tunnel
+│   ├── database.py                 ← SQLite layer (auth, sessions, events)
+│   └── _shared.py                  ← Cross-thread Events for the alarm flag
+│
+├── src/
+│   ├── alert/
+│   │   └── alert_system.py         ← State machine for drowsy / yawn detection
+│   ├── classification/
+│   │   ├── model_builder.py        ← 6 CNN backbones + classifier head
+│   │   ├── train.py                ← Training loop (AMP, early stopping)
+│   │   └── predict.py              ← Inference predictor
+│   ├── detection/
+│   │   └── face_detector.py        ← Haar cascade fallback
+│   └── utils/
+│       ├── preprocessing.py        ← Image transforms & frame utilities
+│       ├── drowsiness_utils.py     ← EAR / MAR / score computation
+│       └── sanity_check.py         ← CI architecture verification
+│
+├── data/
+│   ├── raw/                        ← Kaggle dataset extraction target
+│   ├── processed/                  ← train / val / test splits (alert / drowsy)
+│   ├── driver_drowsiness.db        ← SQLite DB (created at runtime)
+│   └── scripts/
+│       ├── prepare_dataset.py      ← Kaggle → train/val/test splitter
+│       ├── build_manifest.py       ← Manifest builder for processed splits
+│       └── validate_dataset.py     ← Dataset integrity checker
+│
+├── models/
+│   ├── face_landmarker.task        ← MediaPipe Tasks landmark model
+│   ├── MODEL_CARD.md               ← Trained model documentation
+│   ├── weights/                    ← Trained .pt weights for all 6 backbones
+│   └── results/
+│       ├── training_summary.json   ← Best val acc + epoch + training time
+│       └── sanity_check.json       ← CI sanity-check output
+│
+├── notebooks/
+│   └── 01_model_training.ipynb     ← End-to-end training notebook
 │
 ├── tests/
-│   ├── __init__.py
-│   └── test_pipeline.py            ← Comprehensive pytest suite
+│   └── test_pipeline.py            ← pytest suite (unit + integration)
 │
+├── Dockerfile                      ← Multi-stage CPU image
+├── .dockerignore
 ├── .gitignore
 ├── requirements.txt
-├── README.md
-└── Dockerfile
+└── README.md
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/OmerKhan33/driver-drowsiness-detection-system.git
 cd driver-drowsiness-detection-system
 ```
 
-### 2. Create Virtual Environment & Install Dependencies
+### 2. Create a virtual environment & install dependencies
 
 ```bash
 python -m venv venv
-source venv/bin/activate        # Linux/Mac
-# venv\Scripts\activate          # Windows
+# Linux / macOS
+source venv/bin/activate
+# Windows (PowerShell)
+venv\Scripts\Activate.ps1
+
 pip install -r requirements.txt
 ```
 
-### 3. Prepare Dataset (after Kaggle download)
+### 3. Run the Streamlit app
 
 ```bash
-python data/scripts/prepare_dataset.py
+python -m streamlit run app/streamlit_app.py
 ```
 
-### 4. Run Smoke Tests
+Then open <http://localhost:8501> in your browser.
+
+> **Default admin login** — create a driver account on the **Create Account** tab; the admin role is provisioned by the database layer (see `app/database.py`).
+
+### 4. (Optional) Expose via ngrok
 
 ```bash
-python src/utils/preprocessing.py          # All ✓ checks
-python src/utils/drowsiness_utils.py       # All ✓ checks
-python src/classification/model_builder.py # Model parameter table
+python app/run_app.py --ngrok-token YOUR_NGROK_AUTH_TOKEN
 ```
 
-### 5. Run Sanity Check
-
-```bash
-python src/utils/sanity_check.py           # All checks PASSED
-```
-
-### 6. Run Test Suite
+### 5. Run the test suite
 
 ```bash
 pytest tests/ -v --cov=src --cov-report=term-missing
 ```
 
-### 7. Train Models
+### 6. Run the sanity check
+
+```bash
+python src/utils/sanity_check.py
+```
+
+### 7. Train models (optional — pretrained weights are committed)
 
 ```bash
 python src/classification/train.py --epochs 15 --batch_size 32 --lr 0.0001
 ```
 
-### 8. Launch Demo App
+---
+
+## Running with Docker
+
+The project ships a multi-stage Dockerfile that uses CPU-only PyTorch wheels for a lean image.
 
 ```bash
-streamlit run app/main.py
+# Build
+docker build -t drowsiness-detector .
+
+# Run (port 8501, persist SQLite DB to a host volume)
+docker run -p 8501:8501 -v drowsi-data:/app/data drowsiness-detector
 ```
 
-### 9. Run Comparison Notebook
+The container has a `HEALTHCHECK` that verifies the PyTorch import, and Streamlit is started in headless mode bound to `0.0.0.0:8501`.
+
+---
+
+## Dataset Setup
+
+This project uses the [Drowsiness Dataset](https://www.kaggle.com/datasets/dheerajperumandla/drowsiness-dataset) on Kaggle.
+
+### Download & prepare
 
 ```bash
-jupyter notebook notebooks/model_comparison.ipynb
+# Option A — Kaggle CLI
+pip install kaggle
+kaggle datasets download -d dheerajperumandla/drowsiness-dataset
+unzip drowsiness-dataset.zip -d data/raw/
+
+# Option B — manual
+# Download from the URL above and extract to data/raw/
+
+# Then run the splitter
+python data/scripts/prepare_dataset.py
+python data/scripts/validate_dataset.py
 ```
 
----
+The splitter maps Kaggle classes to the project taxonomy:
+- `Open_Eyes` + `no_yawn` → **ALERT**
+- `Closed_Eyes` + `Yawn` → **DROWSY**
 
-## 📊 Dataset Setup
-
-This project uses the [Drowsiness Dataset](https://www.kaggle.com/datasets/dheerajperumandla/drowsiness-dataset) by dheerajperumandla on Kaggle.
-
-### Download Instructions
-
-1. **Option A — Kaggle CLI:**
-   ```bash
-   pip install kaggle
-   kaggle datasets download -d dheerajperumandla/drowsiness-dataset
-   unzip drowsiness-dataset.zip -d data/raw/
-   ```
-
-2. **Option B — Manual Download:**
-   - Visit: https://www.kaggle.com/datasets/dheerajperumandla/drowsiness-dataset
-   - Download and extract to `data/raw/drowsiness-dataset/`
-
-3. **Run Preparation Script:**
-   ```bash
-   python data/scripts/prepare_dataset.py
-   ```
-
-The script maps:
-- `Open_Eyes` + `no_yawn` → **ALERT** class
-- `Closed_Eyes` + `Yawn` → **DROWSY** class
-
-And splits into: **Train (70%)** / **Val (15%)** / **Test (15%)**
+with a **70 / 15 / 15** train / val / test split.
 
 ---
 
-## 📈 Model Comparison Results
+## Model Comparison Results
 
-### Face Detection Models
+Pretrained weights for all six classifiers are committed under [`models/weights/`](models/weights/). Results are taken from [`models/results/training_summary.json`](models/results/training_summary.json) (15-epoch budget, early stopping on val loss).
 
-| Model     | Avg Time (ms) | FPS    | Parameters |
-|-----------|---------------|--------|------------|
-| YOLOv8n   | TBD           | TBD    | 3.2M       |
-| YOLOv9c   | TBD           | TBD    | 25.3M      |
-| YOLOv11n  | TBD           | TBD    | 2.6M       |
-| YOLOv12n  | TBD           | TBD    | 2.6M       |
-| Haar      | TBD           | TBD    | N/A        |
+| Model            | Best Val Accuracy | Best Epoch | Training Time | Approx. Params |
+|------------------|------------------:|-----------:|--------------:|---------------:|
+| **ResNet50**     |        **100.0%** |         11 |        7m 07s |          23.5M |
+| ResNet18         |             98.6% |          9 |        5m 24s |          11.2M |
+| MobileNetV2      |             97.2% |          9 |        5m 24s |           2.2M |
+| EfficientNet-B0  |             96.8% |         13 |        6m 04s |           4.0M |
+| VGG16            |             94.5% |          9 |        6m 18s |         134.3M |
+| CustomCNN        |             56.0% |          6 |        4m 35s |          ~0.5M |
 
-### Classification Models
-
-| Model          | Accuracy | F1 Score | Precision | Recall | AUC   | Params  |
-|----------------|----------|----------|-----------|--------|-------|---------|
-| CustomCNN      | TBD      | TBD      | TBD       | TBD    | TBD   | ~0.5M   |
-| ResNet18       | TBD      | TBD      | TBD       | TBD    | TBD   | 11.2M   |
-| ResNet50       | TBD      | TBD      | TBD       | TBD    | TBD   | 23.5M   |
-| VGG16          | TBD      | TBD      | TBD       | TBD    | TBD   | 134.3M  |
-| EfficientNet-B0| TBD      | TBD      | TBD       | TBD    | TBD   | 4.0M    |
-| MobileNetV2    | TBD      | TBD      | TBD       | TBD    | TBD   | 2.2M    |
-
-*Results will be populated after running the model comparison notebook.*
+> **In production** the app defaults to MobileNetV2 — best accuracy-to-latency trade-off. Switch backbones in the driver dashboard sidebar.
 
 ---
 
-## ⚙️ GitHub Actions Pipeline
+## GitHub Actions Pipeline
 
-The CI/CD pipeline runs automatically on every push and pull request with 3 sequential jobs:
+Every push and pull request triggers four jobs in [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 
 ```
-lint → test → model-check
+lint ─┬─▶ test ─▶ model-check
+      └─▶ docker-build
 ```
 
-1. **Lint** — Runs flake8, black, and isort checks on all Python code
-2. **Test** — Executes the full pytest suite with coverage reporting
-3. **Model Check** — Runs `sanity_check.py` to verify all model architectures load and produce correct outputs
+1. **lint** — `flake8` + `black --check` + `isort --check` over `src/`, `tests/`, `app/`.
+2. **test** — installs CPU PyTorch wheels and runs `pytest` with coverage.
+3. **model-check** — runs `src/utils/sanity_check.py`, uploads results as artifact.
+4. **docker-build** — builds the production image with Buildx + GHA cache, then smoke-tests `python -c "import torch, cv2, mediapipe, streamlit"` inside the container.
 
 ---
 
-## 📄 File Descriptions
+## File Descriptions
 
 | File | Description |
 |------|-------------|
-| `src/utils/preprocessing.py` | Image preprocessing, transforms, and frame utilities |
-| `src/utils/drowsiness_utils.py` | EAR/MAR calculation, drowsiness scoring functions |
-| `src/utils/sanity_check.py` | Model architecture verification for CI pipeline |
-| `src/detection/face_detector.py` | YOLO and Haar Cascade face detector wrappers |
-| `src/classification/model_builder.py` | CNN model builder (6 architectures) |
+| `app/streamlit_app.py` | Main web app — role-based login, driver dashboard with live webcam, admin control panel |
+| `app/run_app.py` | Launcher that starts Streamlit and opens an ngrok tunnel for remote access |
+| `app/database.py` | SQLite layer for users, sessions, and drowsiness events |
+| `app/_shared.py` | Module-cached `threading.Event` flags so the alarm survives Streamlit re-runs |
+| `src/alert/alert_system.py` | Consecutive-frame state machine — drowsy / yawn / alert decisions |
+| `src/classification/model_builder.py` | Six CNN backbones with a unified two-class head |
 | `src/classification/train.py` | Training loop with AMP, early stopping, checkpointing |
-| `src/classification/predict.py` | Inference predictor for single/batch predictions |
-| `src/alert/alert_system.py` | Drowsiness alert system with audio/visual feedback |
-| `data/scripts/prepare_dataset.py` | Dataset restructuring from Kaggle format |
-| `app/main.py` | Streamlit real-time demo application |
-| `tests/test_pipeline.py` | Comprehensive pytest test suite |
-| `notebooks/model_comparison.ipynb` | Full YOLO + CNN model comparison notebook |
+| `src/classification/predict.py` | Inference predictor for cropped face frames |
+| `src/detection/face_detector.py` | Haar cascade fallback when MediaPipe is unavailable |
+| `src/utils/preprocessing.py` | Transforms, CLAHE, resize / normalize utilities |
+| `src/utils/drowsiness_utils.py` | EAR, MAR, drowsiness-score formulas, level classifier |
+| `src/utils/sanity_check.py` | CI architecture verification |
+| `data/scripts/prepare_dataset.py` | Kaggle dataset → 70/15/15 splits in `data/processed/` |
+| `data/scripts/build_manifest.py` | Generates a CSV manifest of the processed splits |
+| `data/scripts/validate_dataset.py` | Verifies split integrity (counts, no leakage) |
+| `notebooks/01_model_training.ipynb` | End-to-end training & comparison notebook |
+| `tests/test_pipeline.py` | pytest suite — preprocessing, EAR/MAR, models, alert state machine |
+| `Dockerfile` | Multi-stage build, CPU-only PyTorch, ~2 GB image |
 
 ---
 
-## 📊 Results
+## Future Work
 
-Results from model training and comparison will be saved to `models/results/`:
-
-- `detection_comparison.csv` — Face detection speed/accuracy comparison
-- `classification_comparison.csv` — CNN model performance metrics
-- `training_curves.png` — Loss and accuracy curves for all models
-- `confusion_matrices.png` — Confusion matrices for all classifiers
-- `roc_curves.png` — ROC curves with AUC scores
-- `speed_vs_accuracy.png` — Accuracy vs inference speed scatter plot
-
----
-
-## 🔮 Future Work
-
-- [ ] Add driver identity verification (face recognition)
-- [ ] Implement attention tracking using gaze estimation
-- [ ] Add support for night-time / infrared cameras
-- [ ] Deploy as edge application on Raspberry Pi / NVIDIA Jetson
-- [ ] Integrate with vehicle CAN bus for automatic speed reduction
-- [ ] Add multi-driver support for fleet monitoring
-- [ ] Implement temporal modeling (LSTM/Transformer) for sequence-based detection
-- [ ] Add phone usage detection as additional distraction signal
+- [ ] Driver identity verification via face recognition
+- [ ] Gaze-direction estimation as a secondary attention signal
+- [ ] Infrared / night-time camera support
+- [ ] Edge deployment on Raspberry Pi 5 / NVIDIA Jetson Orin Nano
+- [ ] Vehicle CAN-bus integration for haptic / speed-limit response
+- [ ] Multi-driver fleet view in the admin panel
+- [ ] Temporal modelling (LSTM / Transformer) over landmark sequences
+- [ ] Phone-usage / hands-off-wheel detection
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-<p align="center">
-  Made with ❤️ for road safety
-</p>

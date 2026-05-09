@@ -52,8 +52,8 @@ from app._shared import drowsy_event as _drowsy_event, yawn_event as _yawn_event
 # ── Page Config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="DrowsiGuard - Driver Safety System",
-    page_icon="🛡️",
+    page_title="DrowsiGuard — Driver Safety System",
+    page_icon="🛡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -61,125 +61,221 @@ st.set_page_config(
 # ── CSS ───────────────────────────────────────────────────────────────────────
 
 st.markdown("""<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-*{font-family:'Inter',sans-serif;}
-html,body,[data-testid="stAppViewContainer"]{background:#060918!important;}
-.main .block-container{padding-top:0.6rem;max-width:1480px;}
-[data-testid="stSidebar"]{
-    background:linear-gradient(195deg,#070b1e 0%,#0d1330 40%,#111c47 100%)!important;
-    border-right:1px solid rgba(99,102,241,0.08);
-}
-[data-testid="stSidebar"] *{color:#c7d2e8!important;}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&display=swap');
 
-/* ─ Animated Header ─ */
-@keyframes shimmer{0%{background-position:200% 50%;}100%{background-position:-200% 50%;}}
-@keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+:root{
+    --bg:#0b1220;
+    --bg-elev:#111a2e;
+    --bg-card:#13203a;
+    --border:rgba(148,163,184,0.10);
+    --border-strong:rgba(148,163,184,0.18);
+    --text:#e6edf7;
+    --text-dim:#94a3b8;
+    --text-mute:#64748b;
+    --accent:#3b82f6;
+    --accent-2:#60a5fa;
+    --ok:#22c55e;
+    --warn:#f59e0b;
+    --danger:#ef4444;
+}
+
+*{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;}
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important;}
+.main .block-container{padding-top:1.2rem;padding-bottom:2rem;max-width:1440px;}
+[data-testid="stHeader"]{background:transparent;}
+
+[data-testid="stSidebar"]{
+    background:#0a1020!important;
+    border-right:1px solid var(--border);
+}
+[data-testid="stSidebar"] *{color:var(--text)!important;}
+[data-testid="stSidebar"] .stMarkdown small,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:var(--text-dim)!important;}
+
+/* ─ Header ─ */
 .hdr{
-    background:linear-gradient(135deg,#0a1128 0%,#1a2755 35%,#162040 65%,#0a1128 100%);
-    padding:1.8rem 2.4rem;border-radius:20px;margin-bottom:1.4rem;
-    border:1px solid rgba(99,102,241,0.12);
-    box-shadow:0 12px 48px rgba(0,0,0,0.5),0 0 0 1px rgba(99,102,241,0.05) inset;
-    position:relative;overflow:hidden;
+    background:var(--bg-elev);
+    padding:1.4rem 1.8rem;border-radius:14px;margin-bottom:1.4rem;
+    border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;gap:1rem;
 }
-.hdr::before{
-    content:'';position:absolute;top:-60%;right:-20%;width:500px;height:500px;
-    background:radial-gradient(circle,rgba(99,102,241,0.07) 0%,transparent 65%);
-    animation:float 6s ease-in-out infinite;
-}
-.hdr::after{
-    content:'';position:absolute;bottom:-40%;left:-10%;width:350px;height:350px;
-    background:radial-gradient(circle,rgba(56,189,248,0.05) 0%,transparent 65%);
-    animation:float 8s ease-in-out infinite reverse;
+.hdr .hdr-title{display:flex;align-items:center;gap:0.9rem;}
+.hdr .hdr-mark{
+    width:42px;height:42px;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent) 0%,#1d4ed8 100%);
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-weight:700;font-size:1.05rem;letter-spacing:0.5px;
+    box-shadow:0 4px 16px rgba(59,130,246,0.25);
 }
 .hdr h1{
-    color:#f1f5f9;font-size:1.85rem;font-weight:900;margin:0;
-    letter-spacing:-0.5px;position:relative;z-index:1;
-    background:linear-gradient(135deg,#e2e8f0,#93c5fd,#e2e8f0);
-    background-size:400% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-    animation:shimmer 6s ease-in-out infinite;
+    color:var(--text);font-size:1.35rem;font-weight:700;margin:0;
+    letter-spacing:-0.2px;line-height:1.15;
 }
-.hdr p{color:rgba(148,163,184,0.7);font-size:0.85rem;margin:0.3rem 0 0;position:relative;z-index:1;}
+.hdr p{color:var(--text-dim);font-size:0.82rem;margin:0.15rem 0 0;font-weight:400;}
+.hdr-meta{
+    color:var(--text-mute);font-size:0.72rem;font-weight:500;
+    text-transform:uppercase;letter-spacing:1.5px;
+}
 
 /* ─ Metric Cards ─ */
 .mc{
-    background:linear-gradient(145deg,rgba(13,19,48,0.95),rgba(26,39,85,0.7));
-    border-radius:16px;padding:1.1rem 1.3rem;text-align:center;
-    border:1px solid rgba(99,102,241,0.08);
-    box-shadow:0 4px 24px rgba(0,0,0,0.3),0 0 0 1px rgba(99,102,241,0.03) inset;
-    backdrop-filter:blur(12px);transition:all 0.35s cubic-bezier(0.4,0,0.2,1);
+    background:var(--bg-card);
+    border-radius:12px;padding:1rem 1.15rem;
+    border:1px solid var(--border);
+    transition:border-color 0.2s ease;
 }
-.mc:hover{border-color:rgba(99,102,241,0.25);transform:translateY(-3px);box-shadow:0 8px 32px rgba(99,102,241,0.1);}
-.mc .lbl{color:#7c8db5;font-size:0.6rem;text-transform:uppercase;letter-spacing:2px;font-weight:700;}
-.mc .val{font-size:1.65rem;font-weight:900;margin:0.2rem 0;letter-spacing:-0.5px;}
-.mc .val.g{color:#34d399;text-shadow:0 0 20px rgba(52,211,153,0.2);}
-.mc .val.y{color:#fbbf24;text-shadow:0 0 20px rgba(251,191,36,0.2);}
-.mc .val.r{color:#f87171;text-shadow:0 0 20px rgba(248,113,113,0.2);}
+.mc:hover{border-color:var(--border-strong);}
+.mc .lbl{
+    color:var(--text-mute);font-size:0.68rem;text-transform:uppercase;
+    letter-spacing:1.6px;font-weight:600;margin-bottom:0.45rem;
+}
+.mc .val{
+    font-family:'JetBrains Mono',monospace;
+    font-size:1.5rem;font-weight:600;letter-spacing:-0.5px;line-height:1;
+}
+.mc .val.g{color:var(--ok);}
+.mc .val.y{color:var(--warn);}
+.mc .val.r{color:var(--danger);}
 
 /* ─ Status Pill ─ */
-@keyframes pls{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4);}50%{box-shadow:0 0 30px 10px rgba(239,68,68,0.12);}}
-@keyframes pulse_ok{0%,100%{box-shadow:0 4px 15px rgba(52,211,153,0.3);}50%{box-shadow:0 4px 25px rgba(52,211,153,0.15);}}
-.sp{
-    display:inline-block;padding:0.5rem 2.2rem;border-radius:50px;
-    font-weight:900;font-size:0.9rem;letter-spacing:2.5px;text-transform:uppercase;
-    transition:all 0.3s ease;
+@keyframes pulse-danger{
+    0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.5);}
+    50%{box-shadow:0 0 0 8px rgba(239,68,68,0);}
 }
-.sp.ok{background:linear-gradient(135deg,#059669,#10b981);color:#fff;animation:pulse_ok 3s infinite;}
-.sp.wn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#0f172a;box-shadow:0 4px 18px rgba(245,158,11,0.25);}
-.sp.dg{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;animation:pls 1s infinite;}
+.sp{
+    display:inline-flex;align-items:center;gap:0.55rem;
+    padding:0.5rem 1.4rem;border-radius:8px;
+    font-weight:600;font-size:0.78rem;letter-spacing:1.6px;text-transform:uppercase;
+    border:1px solid transparent;
+}
+.sp::before{
+    content:'';width:8px;height:8px;border-radius:50%;
+}
+.sp.ok{background:rgba(34,197,94,0.10);color:#4ade80;border-color:rgba(34,197,94,0.25);}
+.sp.ok::before{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,0.6);}
+.sp.wn{background:rgba(245,158,11,0.10);color:#fbbf24;border-color:rgba(245,158,11,0.25);}
+.sp.wn::before{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,0.6);}
+.sp.dg{background:rgba(239,68,68,0.12);color:#fca5a5;border-color:rgba(239,68,68,0.35);animation:pulse-danger 1.2s infinite;}
+.sp.dg::before{background:#ef4444;box-shadow:0 0 10px rgba(239,68,68,0.8);}
 
 /* ─ Login ─ */
 .login-wrap{
-    max-width:460px;margin:2.5rem auto;
-    background:linear-gradient(145deg,rgba(13,19,48,0.97),rgba(26,39,85,0.75));
-    border-radius:28px;padding:2.8rem;border:1px solid rgba(99,102,241,0.1);
-    box-shadow:0 24px 72px rgba(0,0,0,0.5),0 0 0 1px rgba(99,102,241,0.05) inset;
-    backdrop-filter:blur(24px);
+    max-width:420px;margin:2rem auto 1rem;
+    background:var(--bg-elev);
+    border-radius:16px;padding:2rem 2.2rem 1rem;
+    border:1px solid var(--border);
 }
 .login-wrap h2{
-    color:#f1f5f9;text-align:center;font-weight:900;font-size:1.5rem;margin-bottom:0.3rem;
-    background:linear-gradient(135deg,#e2e8f0,#818cf8);-webkit-background-clip:text;
-    -webkit-text-fill-color:transparent;
+    color:var(--text);text-align:left;font-weight:700;font-size:1.35rem;
+    margin:0 0 0.25rem;letter-spacing:-0.3px;
 }
-.login-wrap .sub{color:#64748b;text-align:center;font-size:0.82rem;margin-bottom:1.5rem;}
+.login-wrap .sub{
+    color:var(--text-dim);text-align:left;font-size:0.85rem;
+    margin-bottom:0.5rem;font-weight:400;
+}
 
 /* ─ Admin Stat Card ─ */
 .asc{
-    background:linear-gradient(145deg,rgba(13,19,48,0.95),rgba(26,39,85,0.7));
-    border-radius:18px;padding:1.6rem;text-align:center;
-    border:1px solid rgba(99,102,241,0.08);
-    box-shadow:0 6px 28px rgba(0,0,0,0.3);
-    transition:all 0.35s cubic-bezier(0.4,0,0.2,1);
+    background:var(--bg-card);
+    border-radius:12px;padding:1.3rem 1.4rem;
+    border:1px solid var(--border);
+    transition:border-color 0.2s ease;
 }
-.asc:hover{transform:translateY(-2px);border-color:rgba(99,102,241,0.2);}
-.asc h2{font-size:2.6rem;font-weight:900;margin:0;letter-spacing:-1px;}
-.asc p{color:#7c8db5;font-size:0.65rem;text-transform:uppercase;letter-spacing:2px;margin:0.4rem 0 0;font-weight:600;}
-
-/* ─ Cam Area ─ */
-.idle-cam{
-    background:linear-gradient(145deg,rgba(13,19,48,0.9),rgba(26,39,85,0.4));
-    border-radius:20px;padding:5rem 2rem;text-align:center;
-    border:2px dashed rgba(99,102,241,0.12);
+.asc:hover{border-color:var(--border-strong);}
+.asc h2{
+    font-family:'JetBrains Mono',monospace;
+    font-size:2rem;font-weight:600;margin:0;letter-spacing:-0.8px;line-height:1;
+}
+.asc p{
+    color:var(--text-mute);font-size:0.7rem;text-transform:uppercase;
+    letter-spacing:1.6px;margin:0.55rem 0 0;font-weight:600;
 }
 
-/* ─ Global Tweaks ─ */
+/* ─ Section Headings ─ */
+h1,h2,h3,h4{color:var(--text)!important;letter-spacing:-0.3px;}
+h3{font-size:1.05rem!important;font-weight:600!important;margin-top:0.5rem!important;}
+
+/* ─ Inputs ─ */
+.stTextInput input,.stTextArea textarea,.stSelectbox div[data-baseweb="select"]>div{
+    background:var(--bg-card)!important;
+    color:var(--text)!important;
+    border:1px solid var(--border)!important;
+    border-radius:8px!important;
+}
+.stTextInput input:focus,.stTextArea textarea:focus{
+    border-color:var(--accent)!important;
+    box-shadow:0 0 0 3px rgba(59,130,246,0.15)!important;
+}
+label,.stSelectbox label,.stSlider label{
+    color:var(--text-dim)!important;font-weight:500!important;font-size:0.82rem!important;
+}
+
+/* ─ Buttons ─ */
 .stButton>button{
-    background:linear-gradient(135deg,#4f46e5,#6366f1)!important;color:#fff!important;
-    border:none!important;border-radius:12px!important;font-weight:700!important;
-    transition:all 0.3s ease!important;letter-spacing:0.3px!important;
+    background:var(--bg-card)!important;color:var(--text)!important;
+    border:1px solid var(--border-strong)!important;border-radius:8px!important;
+    font-weight:500!important;letter-spacing:0.2px!important;
+    transition:all 0.18s ease!important;padding:0.55rem 1.1rem!important;
 }
-.stButton>button:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(99,102,241,0.3)!important;}
-.stButton>button[kind="primary"]{background:linear-gradient(135deg,#4f46e5,#7c3aed)!important;}
-div[data-testid="stDataFrame"]{border-radius:12px;overflow:hidden;}
-.stTabs [data-baseweb="tab-list"]{gap:8px;}
-.stTabs [data-baseweb="tab"]{
-    background:rgba(13,19,48,0.6)!important;border-radius:10px!important;
-    border:1px solid rgba(99,102,241,0.06)!important;color:#94a3b8!important;
+.stButton>button:hover{
+    background:var(--bg-elev)!important;border-color:var(--accent)!important;
+    color:#fff!important;
+}
+.stButton>button[kind="primary"]{
+    background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important;
     font-weight:600!important;
 }
-.stTabs [aria-selected="true"]{
-    background:linear-gradient(135deg,rgba(79,70,229,0.2),rgba(99,102,241,0.1))!important;
-    border-color:rgba(99,102,241,0.3)!important;color:#e2e8f0!important;
+.stButton>button[kind="primary"]:hover{
+    background:#2563eb!important;border-color:#2563eb!important;
+    box-shadow:0 4px 14px rgba(59,130,246,0.3)!important;
 }
+
+/* ─ Form submit buttons (st.form_submit_button) ─ */
+[data-testid="stFormSubmitButton"]>button{
+    background:var(--accent)!important;color:#fff!important;
+    border:1px solid var(--accent)!important;border-radius:8px!important;
+    font-weight:600!important;
+}
+[data-testid="stFormSubmitButton"]>button:hover{
+    background:#2563eb!important;border-color:#2563eb!important;
+}
+
+/* ─ Tabs ─ */
+.stTabs [data-baseweb="tab-list"]{gap:4px;border-bottom:1px solid var(--border);}
+.stTabs [data-baseweb="tab"]{
+    background:transparent!important;border-radius:6px 6px 0 0!important;
+    border:none!important;color:var(--text-dim)!important;
+    font-weight:500!important;font-size:0.88rem!important;
+    padding:0.65rem 1.1rem!important;
+}
+.stTabs [data-baseweb="tab"]:hover{color:var(--text)!important;background:rgba(148,163,184,0.05)!important;}
+.stTabs [aria-selected="true"]{
+    color:var(--accent-2)!important;
+    border-bottom:2px solid var(--accent)!important;
+    background:transparent!important;
+}
+
+/* ─ DataFrame ─ */
+div[data-testid="stDataFrame"]{
+    border-radius:10px;overflow:hidden;
+    border:1px solid var(--border);
+}
+
+/* ─ Alerts (st.info / st.success / st.error / st.warning) ─ */
+[data-testid="stAlert"]{
+    background:var(--bg-card)!important;border-radius:8px!important;
+    border-left-width:3px!important;
+}
+
+/* ─ Sliders ─ */
+.stSlider [data-baseweb="slider"]>div>div{background:var(--accent)!important;}
+
+hr{border-color:var(--border)!important;margin:0.8rem 0!important;}
+
+/* ─ Hide Streamlit branding for cleaner look ─ */
+#MainMenu{visibility:hidden;}
+footer{visibility:hidden;}
 </style>""", unsafe_allow_html=True)
 
 
@@ -191,7 +287,13 @@ def mc(label, value, color="g"):
 
 def sp(level):
     c = {"ALERT": "ok", "MILD": "wn", "DROWSY": "dg"}.get(level, "ok")
-    return f'<div style="text-align:center"><span class="sp {c}">{level}</span></div>'
+    return (
+        f'<div class="mc" style="display:flex;flex-direction:column;justify-content:center;'
+        f'align-items:flex-start;">'
+        f'<div class="lbl">Status</div>'
+        f'<div style="margin-top:0.4rem;"><span class="sp {c}">{level}</span></div>'
+        f'</div>'
+    )
 
 
 def overlay(frame, ear, mar, score, level, fps, consec=0):
@@ -222,58 +324,65 @@ DEFAULT_CNN = 0.65
 
 def render_auth_page():
     st.markdown("""
-    <div class="hdr" style="text-align:center">
-        <h1>🛡️ DrowsiGuard</h1>
-        <p>Intelligent Driver Safety Monitoring System</p>
+    <div class="hdr" style="justify-content:center;text-align:center;">
+        <div class="hdr-title" style="flex-direction:column;align-items:center;gap:0.6rem;">
+            <div class="hdr-mark">DG</div>
+            <div>
+                <h1>DrowsiGuard</h1>
+                <p>Intelligent Driver Safety Monitoring</p>
+            </div>
+        </div>
     </div>""", unsafe_allow_html=True)
 
-    tab_login, tab_signup = st.tabs(["Login", "Create Account"])
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
 
-    with tab_login:
-        st.markdown("""<div class="login-wrap">
-            <h2>Welcome Back</h2>
-            <p class="sub">Sign in to your account</p>
-        </div>""", unsafe_allow_html=True)
-        role = st.selectbox("Login as", ["Driver", "Admin"], key="login_role")
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Sign In", use_container_width=True, type="primary")
-            if submitted and username and password:
-                result = authenticate_user(username, password)
-                if not result["success"]:
-                    st.error(result["message"])
-                elif result["role"] != role.lower():
-                    st.error(f"This account is not registered as {role}.")
-                else:
-                    st.session_state.user = result
-                    st.session_state.logged_in = True
-                    st.rerun()
-
-    with tab_signup:
-        st.markdown("""<div class="login-wrap">
-            <h2>Driver Registration</h2>
-            <p class="sub">Create a new driver account</p>
-        </div>""", unsafe_allow_html=True)
-        with st.form("signup_form"):
-            full_name = st.text_input("Full Name")
-            new_user = st.text_input("Choose Username")
-            new_pass = st.text_input("Password", type="password", key="s_pass")
-            confirm = st.text_input("Confirm Password", type="password", key="s_conf")
-            submitted = st.form_submit_button("Create Account", use_container_width=True)
-            if submitted:
-                if not all([full_name, new_user, new_pass, confirm]):
-                    st.warning("Please fill all fields.")
-                elif new_pass != confirm:
-                    st.error("Passwords do not match.")
-                elif len(new_pass) < 4:
-                    st.error("Password must be at least 4 characters.")
-                else:
-                    result = create_user(new_user, new_pass, full_name)
-                    if result["success"]:
-                        st.success("Account created! Go to Login tab.")
-                    else:
+        with tab_login:
+            st.markdown("""<div class="login-wrap">
+                <h2>Welcome back</h2>
+                <p class="sub">Sign in to access your dashboard.</p>
+            </div>""", unsafe_allow_html=True)
+            role = st.selectbox("Account type", ["Driver", "Admin"], key="login_role")
+            with st.form("login_form"):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Sign in", use_container_width=True, type="primary")
+                if submitted and username and password:
+                    result = authenticate_user(username, password)
+                    if not result["success"]:
                         st.error(result["message"])
+                    elif result["role"] != role.lower():
+                        st.error(f"This account is not registered as {role}.")
+                    else:
+                        st.session_state.user = result
+                        st.session_state.logged_in = True
+                        st.rerun()
+
+        with tab_signup:
+            st.markdown("""<div class="login-wrap">
+                <h2>Create driver account</h2>
+                <p class="sub">Register to start monitoring your driving sessions.</p>
+            </div>""", unsafe_allow_html=True)
+            with st.form("signup_form"):
+                full_name = st.text_input("Full name")
+                new_user = st.text_input("Username")
+                new_pass = st.text_input("Password", type="password", key="s_pass")
+                confirm = st.text_input("Confirm password", type="password", key="s_conf")
+                submitted = st.form_submit_button("Create account", use_container_width=True, type="primary")
+                if submitted:
+                    if not all([full_name, new_user, new_pass, confirm]):
+                        st.warning("Please fill all fields.")
+                    elif new_pass != confirm:
+                        st.error("Passwords do not match.")
+                    elif len(new_pass) < 4:
+                        st.error("Password must be at least 4 characters.")
+                    else:
+                        result = create_user(new_user, new_pass, full_name)
+                        if result["success"]:
+                            st.success("Account created. Switch to Sign In to continue.")
+                        else:
+                            st.error(result["message"])
 
 
 # ── Driver Dashboard ──────────────────────────────────────────────────────────
@@ -282,27 +391,36 @@ def render_driver_dashboard():
     user = st.session_state.user
 
     st.markdown(f"""<div class="hdr">
-        <h1>🚗 Driver Dashboard</h1>
-        <p>Welcome, {user['full_name']} &bull; Real-time Monitoring Active</p>
+        <div class="hdr-title">
+            <div class="hdr-mark">DG</div>
+            <div>
+                <h1>Driver Dashboard</h1>
+                <p>{user['full_name']} &middot; Real-time monitoring</p>
+            </div>
+        </div>
+        <div class="hdr-meta">Live</div>
     </div>""", unsafe_allow_html=True)
 
     with st.sidebar:
-        st.markdown(f"### 👤 {user['full_name']}")
-        st.caption(f"@{user['username']} | Driver")
-        st.markdown("---")
-        if st.button("🚪 Logout", use_container_width=True):
+        st.markdown(f"""<div style="padding:0.4rem 0 0.8rem;">
+            <div style="font-weight:600;font-size:1rem;color:#e6edf7;">{user['full_name']}</div>
+            <div style="color:#94a3b8;font-size:0.78rem;margin-top:0.15rem;">@{user['username']} &middot; Driver</div>
+        </div>""", unsafe_allow_html=True)
+        if st.button("Sign out", use_container_width=True):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
-        st.markdown("---")
-        show_lm = st.checkbox("Show Landmarks", True)
-        show_ov = st.checkbox("Show Overlay", True)
 
         st.markdown("---")
-        st.markdown("**CNN Classification Model**")
-        model_choice = st.selectbox("Select Model", [
+        st.markdown("**Display options**")
+        show_lm = st.checkbox("Show landmarks", True)
+        show_ov = st.checkbox("Show overlay", True)
+
+        st.markdown("---")
+        st.markdown("**Classification model**")
+        model_choice = st.selectbox("Backbone", [
             "MobileNetV2", "CustomCNN", "ResNet18", "ResNet50", "VGG16", "EfficientNet-B0"
-        ])
+        ], label_visibility="collapsed")
 
     # Init state
     for key, default in [
@@ -316,11 +434,11 @@ def render_driver_dashboard():
             st.session_state[key] = default
 
     if st.session_state.session_id is None:
-        if st.button("▶ Start New Session (For Logging)", use_container_width=True, type="primary"):
+        if st.button("Start monitoring session", use_container_width=True, type="primary"):
             st.session_state.session_id = start_session(user["user_id"])
             st.rerun()
     else:
-        if st.button("⏹ Stop Session", use_container_width=True):
+        if st.button("End session", use_container_width=True):
             if st.session_state.session_id:
                 stats = st.session_state.alert_system.get_stats()
                 end_session(st.session_state.session_id,
@@ -330,9 +448,8 @@ def render_driver_dashboard():
                 st.session_state.alert_system.reset()
                 st.rerun()
 
-    st.markdown("### 📷 Live Camera Feed")
-    st.info("💡 Grant camera permissions. The video runs entirely in your browser "
-            "and sends frames to the server for processing.")
+    st.markdown("### Live camera feed")
+    st.info("Grant camera permissions when prompted. Video is processed in real time on the server.")
 
     # ── Setup MediaPipe (modern Tasks API — works with mediapipe ≥0.10.30) ──
     # The legacy `mp.solutions.face_mesh` namespace was removed in 0.10.21+,
@@ -606,9 +723,9 @@ def render_driver_dashboard():
         level = cr["level"]
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.markdown(mc("EAR", f"{cr['ear']:.3f}", ear_c), unsafe_allow_html=True)
-        m2.markdown(mc("MAR", f"{cr['mar']:.3f}", mar_c), unsafe_allow_html=True)
-        m3.markdown(mc("Score", f"{cr['score']:.2f}", "r" if cr['score'] > 0.6 else "g"),
+        m1.markdown(mc("Eye aspect ratio", f"{cr['ear']:.3f}", ear_c), unsafe_allow_html=True)
+        m2.markdown(mc("Mouth aspect ratio", f"{cr['mar']:.3f}", mar_c), unsafe_allow_html=True)
+        m3.markdown(mc("Drowsiness score", f"{cr['score']:.2f}", "r" if cr['score'] > 0.6 else "g"),
                     unsafe_allow_html=True)
         m4.markdown(sp(level), unsafe_allow_html=True)
 
@@ -630,52 +747,91 @@ def render_driver_dashboard():
         import streamlit.components.v1 as components
         components.html(f"""
         <div id="drowsi-status" style="display:none">{alarm_status}</div>
-        <div id="alarm-btn-wrap" style="text-align:center;margin:8px 0;">
+        <div id="alarm-btn-wrap" style="text-align:center;margin:6px 0;">
             <button id="enable-sound-btn" onclick="initAudio()" style="
-                background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;
-                border:none;border-radius:12px;padding:10px 28px;font-size:14px;
-                font-weight:700;cursor:pointer;letter-spacing:0.5px;
-                box-shadow:0 4px 15px rgba(99,102,241,0.3);
-            ">🔊 Click to Enable Alarm Sound</button>
+                background:#3b82f6;color:#fff;
+                border:none;border-radius:8px;padding:9px 22px;font-size:13px;
+                font-weight:600;cursor:pointer;letter-spacing:0.3px;
+                font-family:'Inter',-apple-system,sans-serif;
+                box-shadow:0 4px 14px rgba(59,130,246,0.3);
+            ">Enable alarm sound</button>
         </div>
         <script>
         var win = window.parent || window;
 
-        function _scheduleBeep(ctx, whenSec, freq, duration) {{
+        // ── Piercing siren — frequency sweep from 800 Hz to 1600 Hz ──
+        // A wail/yelp pattern is FAR more attention-grabbing than steady
+        // beeps, mirroring the way emergency siren tones are designed to
+        // disrupt drowsy/inattentive states. Sawtooth is harsher than square
+        // and harmonically rich, hitting the brainstem like a vehicle horn.
+        function _scheduleSiren(ctx, whenSec, fStart, fEnd, duration) {{
             try {{
-                var startT = ctx.currentTime + whenSec;
-                var osc = ctx.createOscillator();
+                var t = ctx.currentTime + whenSec;
+
+                // Two detuned oscillators stacked = phaser-like roughness.
+                // Plus a third high oscillator for piercing harmonics.
+                var osc1 = ctx.createOscillator();
+                var osc2 = ctx.createOscillator();
+                var osc3 = ctx.createOscillator();
                 var gain = ctx.createGain();
-                osc.connect(gain);
+
+                osc1.type = 'sawtooth';
+                osc2.type = 'square';
+                osc3.type = 'triangle';
+
+                osc1.frequency.setValueAtTime(fStart, t);
+                osc1.frequency.exponentialRampToValueAtTime(fEnd, t + duration);
+                osc2.frequency.setValueAtTime(fStart * 1.005, t);  // slight detune
+                osc2.frequency.exponentialRampToValueAtTime(fEnd * 1.005, t + duration);
+                osc3.frequency.setValueAtTime(fStart * 2, t);  // octave up — piercing
+                osc3.frequency.exponentialRampToValueAtTime(fEnd * 2, t + duration);
+
+                osc1.connect(gain);
+                osc2.connect(gain);
+                osc3.connect(gain);
                 gain.connect(ctx.destination);
-                osc.frequency.value = freq;
-                osc.type = 'square';
-                gain.gain.setValueAtTime(0.0001, startT);
-                gain.gain.linearRampToValueAtTime(0.45, startT + 0.01);
-                gain.gain.exponentialRampToValueAtTime(0.0001, startT + duration);
-                osc.start(startT);
-                osc.stop(startT + duration + 0.05);
-            }} catch(e) {{ console.error('Beep schedule error:', e); }}
+
+                // Loud, fast attack — no gentle ramp. Sustain near full volume.
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.linearRampToValueAtTime(0.85, t + 0.005);
+                gain.gain.setValueAtTime(0.85, t + duration - 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+                osc1.start(t); osc2.start(t); osc3.start(t);
+                osc1.stop(t + duration + 0.02);
+                osc2.stop(t + duration + 0.02);
+                osc3.stop(t + duration + 0.02);
+            }} catch(e) {{ console.error('Siren schedule error:', e); }}
         }}
 
-        function _beepAt(whenSec, freq, duration) {{
+        function _scheduleTone(ctx, whenSec, freq, duration, volume) {{
+            try {{
+                var t = ctx.currentTime + whenSec;
+                var osc = ctx.createOscillator();
+                var gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.linearRampToValueAtTime(volume, t + 0.01);
+                gain.gain.setValueAtTime(volume, t + duration - 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+                osc.start(t);
+                osc.stop(t + duration + 0.02);
+            }} catch(e) {{ console.error('Tone error:', e); }}
+        }}
+
+        function _resumeThen(fn) {{
             var ctx = win._drowsiAudioCtx;
             if (!ctx) return;
-            // Browsers (esp. Chrome) auto-suspend AudioContext after the tab
-            // is backgrounded. Resume each call so the alarm survives.
             if (ctx.state === 'suspended') {{
-                ctx.resume().then(function() {{
-                    _scheduleBeep(ctx, whenSec, freq, duration);
-                }}).catch(function(e) {{ console.error('Resume failed:', e); }});
+                ctx.resume().then(fn).catch(function(e){{ console.error('Resume failed:', e); }});
             }} else {{
-                _scheduleBeep(ctx, whenSec, freq, duration);
+                fn();
             }}
         }}
 
         function initAudio() {{
-            // Runs on user click — satisfies browser autoplay policy.
-            // Create the AudioContext on the parent window so it survives
-            // iframe destruction during auto-refresh.
             if (!win._drowsiAudioCtx) {{
                 win._drowsiAudioCtx = new (win.AudioContext || win.webkitAudioContext)();
             }}
@@ -683,39 +839,41 @@ def render_driver_dashboard():
                 win._drowsiAudioCtx.resume();
             }}
             win._drowsiSoundEnabled = true;
-            // Confirmation chirp so the user knows audio is working
-            _beepAt(0.0, 440, 0.12);
-            _beepAt(0.15, 880, 0.18);
+            // Confirmation: short ascending chirp at lower volume
+            var ctx = win._drowsiAudioCtx;
+            _scheduleTone(ctx, 0.00, 660, 0.10, 0.25);
+            _scheduleTone(ctx, 0.12, 990, 0.14, 0.25);
             var wrap = document.getElementById('alarm-btn-wrap');
-            if (wrap) wrap.innerHTML = '<span style="color:#34d399;font-size:13px;font-weight:600;">✓ Alarm Sound Enabled</span>';
+            if (wrap) wrap.innerHTML = '<span style="color:#22c55e;font-size:12px;font-weight:600;letter-spacing:0.3px;">Alarm sound enabled</span>';
         }}
 
-        // If sound was already enabled in a previous render, hide button
         if (win._drowsiSoundEnabled) {{
             var wrap = document.getElementById('alarm-btn-wrap');
-            if (wrap) wrap.innerHTML = '<span style="color:#34d399;font-size:13px;font-weight:600;">✓ Alarm Sound Enabled</span>';
+            if (wrap) wrap.innerHTML = '<span style="color:#22c55e;font-size:12px;font-weight:600;letter-spacing:0.3px;">Alarm sound enabled</span>';
         }}
 
-        // ── Schedule alarm beeps based on status ──
-        // Beeps are queued on the AudioContext clock — they play even if
-        // this iframe is destroyed by the next auto-refresh.
         var el = document.getElementById('drowsi-status');
         var status = el ? el.textContent.trim() : 'OK';
         if (win._drowsiSoundEnabled) {{
-            if (status === 'DROWSY') {{
-                // Urgent two-tone alarm — 4 beeps over 1s
-                _beepAt(0.00, 880,  0.15);
-                _beepAt(0.25, 1100, 0.15);
-                _beepAt(0.50, 880,  0.15);
-                _beepAt(0.75, 1100, 0.15);
-            }} else if (status === 'YAWN') {{
-                // Lower-pitched warning — 2 beeps over 1s
-                _beepAt(0.00, 660, 0.20);
-                _beepAt(0.50, 660, 0.20);
-            }}
+            _resumeThen(function() {{
+                var ctx = win._drowsiAudioCtx;
+                if (status === 'DROWSY') {{
+                    // Yelp siren — fast frequency sweeps, 4 wails per second.
+                    // 800→1600 Hz sweep is in the most piercing band of human
+                    // hearing and matches the emergency-vehicle yelp pattern.
+                    _scheduleSiren(ctx, 0.00, 800, 1600, 0.22);
+                    _scheduleSiren(ctx, 0.25, 800, 1600, 0.22);
+                    _scheduleSiren(ctx, 0.50, 800, 1600, 0.22);
+                    _scheduleSiren(ctx, 0.75, 800, 1600, 0.22);
+                }} else if (status === 'YAWN') {{
+                    // Warning chirp — slower sweep, lower band, less aggressive
+                    _scheduleSiren(ctx, 0.00, 500, 800, 0.30);
+                    _scheduleSiren(ctx, 0.55, 500, 800, 0.30);
+                }}
+            }});
         }}
         </script>
-        """, height=55)
+        """, height=50)
 
 
 # ── Admin Dashboard ───────────────────────────────────────────────────────────
@@ -724,50 +882,57 @@ def render_admin_dashboard():
     user = st.session_state.user
 
     st.markdown("""<div class="hdr">
-        <h1>🛡️ Admin Control Panel</h1>
-        <p>System Administrator &bull; Monitor &bull; Configure &bull; Analyze</p>
+        <div class="hdr-title">
+            <div class="hdr-mark">DG</div>
+            <div>
+                <h1>Admin Control Panel</h1>
+                <p>Monitor &middot; Configure &middot; Analyze</p>
+            </div>
+        </div>
+        <div class="hdr-meta">Administrator</div>
     </div>""", unsafe_allow_html=True)
 
     with st.sidebar:
-        st.markdown(f"### 🛡️ {user['full_name']}")
-        st.caption("Administrator")
-        st.markdown("---")
-        if st.button("🚪 Logout", use_container_width=True):
+        st.markdown(f"""<div style="padding:0.4rem 0 0.8rem;">
+            <div style="font-weight:600;font-size:1rem;color:#e6edf7;">{user['full_name']}</div>
+            <div style="color:#94a3b8;font-size:0.78rem;margin-top:0.15rem;">Administrator</div>
+        </div>""", unsafe_allow_html=True)
+        if st.button("Sign out", use_container_width=True):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
         st.markdown("---")
-        st.markdown("**Detection Thresholds**")
-        st.slider("EAR Threshold", 0.15, 0.35, DEFAULT_EAR, 0.01,
-                  help="Eyes closed below this", key="adm_ear")
-        st.slider("MAR Threshold", 0.40, 0.80, DEFAULT_MAR, 0.05,
-                  help="Yawning above this", key="adm_mar")
-        st.slider("Consecutive Frames", 5, 30, DEFAULT_CONSEC, 1, key="adm_consec")
-        st.slider("CNN Confidence", 0.40, 0.90, DEFAULT_CNN, 0.05, key="adm_cnn")
+        st.markdown("**Detection thresholds**")
+        st.slider("EAR threshold", 0.15, 0.35, DEFAULT_EAR, 0.01,
+                  help="Eyes considered closed when below this value", key="adm_ear")
+        st.slider("MAR threshold", 0.40, 0.80, DEFAULT_MAR, 0.05,
+                  help="Yawn detected when above this value", key="adm_mar")
+        st.slider("Consecutive frames", 5, 30, DEFAULT_CONSEC, 1, key="adm_consec")
+        st.slider("CNN confidence", 0.40, 0.90, DEFAULT_CNN, 0.05, key="adm_cnn")
 
     # Stats
     stats = get_dashboard_stats()
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f'<div class="asc"><h2 style="color:#22c55e">{stats["total_drivers"]}</h2>'
-                '<p>Registered Drivers</p></div>', unsafe_allow_html=True)
+                '<p>Registered drivers</p></div>', unsafe_allow_html=True)
     c2.markdown(f'<div class="asc"><h2 style="color:#3b82f6">{stats["total_sessions"]}</h2>'
-                '<p>Total Sessions</p></div>', unsafe_allow_html=True)
+                '<p>Total sessions</p></div>', unsafe_allow_html=True)
     c3.markdown(f'<div class="asc"><h2 style="color:#ef4444">{stats["total_alerts"]}</h2>'
-                '<p>Drowsy Alerts</p></div>', unsafe_allow_html=True)
+                '<p>Drowsy alerts</p></div>', unsafe_allow_html=True)
     c4.markdown(f'<div class="asc"><h2 style="color:#eab308">{stats["total_yawns"]}</h2>'
-                '<p>Yawns Detected</p></div>', unsafe_allow_html=True)
+                '<p>Yawns detected</p></div>', unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
     drivers = get_all_drivers()
-    d_opts = {"All Drivers": None}
+    d_opts = {"All drivers": None}
     for d in drivers:
         d_opts[f"{d['full_name']} (@{d['username']})"] = d["id"]
 
-    tab1, tab2, tab3, tab4 = st.tabs(["🚨 Events Log", "📋 Sessions", "👥 Drivers", "🗄️ Raw SQL"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Events", "Sessions", "Drivers", "Query"])
 
     with tab1:
-        st.markdown("### 🚨 Drowsiness Events")
-        sel = st.selectbox("Filter by Driver", list(d_opts.keys()), key="ev_f")
+        st.markdown("### Drowsiness events")
+        sel = st.selectbox("Filter by driver", list(d_opts.keys()), key="ev_f")
         events = get_driver_events(driver_id=d_opts[sel], limit=500)
         if events:
             df = pd.DataFrame(events)
@@ -778,14 +943,13 @@ def render_admin_dashboard():
             st.dataframe(df_show, use_container_width=True, height=400)
             dc = len(df[df["event_type"] == "drowsy"])
             yc = len(df[df["event_type"] == "yawn"])
-            st.markdown(f"**Total:** {len(events)} events | "
-                        f"🔴 {dc} drowsy | 🟡 {yc} yawns")
+            st.caption(f"{len(events)} events total &nbsp;·&nbsp; {dc} drowsy &nbsp;·&nbsp; {yc} yawns")
         else:
             st.info("No events recorded yet.")
 
     with tab2:
-        st.markdown("### 📋 Session History")
-        sel2 = st.selectbox("Filter by Driver", list(d_opts.keys()), key="ss_f")
+        st.markdown("### Session history")
+        sel2 = st.selectbox("Filter by driver", list(d_opts.keys()), key="ss_f")
         sessions = get_all_sessions(driver_id=d_opts[sel2])
         if sessions:
             df_s = pd.DataFrame(sessions)
@@ -797,16 +961,16 @@ def render_admin_dashboard():
             st.info("No sessions yet.")
 
     with tab3:
-        st.markdown("### 👥 Registered Drivers")
+        st.markdown("### Registered drivers")
         if drivers:
             st.dataframe(pd.DataFrame(drivers), use_container_width=True)
         else:
             st.info("No drivers registered.")
 
     with tab4:
-        st.markdown("### 🗄️ Raw Database Query")
+        st.markdown("### Raw database query")
         query = st.text_input("SQL", "SELECT * FROM events ORDER BY timestamp DESC LIMIT 50")
-        if st.button("Run Query"):
+        if st.button("Run query"):
             try:
                 import sqlite3
                 from app.database import DB_PATH

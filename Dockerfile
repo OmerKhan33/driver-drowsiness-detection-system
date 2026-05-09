@@ -14,8 +14,10 @@ FROM python:3.12-slim AS builder
 WORKDIR /build
 
 # Install system deps for OpenCV and MediaPipe
+# Note: libgl1-mesa-glx was removed in Debian 13 (trixie); libgl1 is the
+# replacement that python:3.12-slim ships with now.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -39,9 +41,9 @@ LABEL version="1.0.0"
 
 WORKDIR /app
 
-# Install runtime system deps
+# Install runtime system deps (libgl1 replaces libgl1-mesa-glx on Debian 13+)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
