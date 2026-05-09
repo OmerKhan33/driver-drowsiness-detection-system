@@ -1,6 +1,10 @@
 # Data & models (too large for GitHub)
 dataset/
-data/
+data/raw/
+data/processed/
+data/external/
+data/*.db
+data/*.sqlite*
 models/weights/*.pt
 models/weights/*.h5
 yolo*.pt

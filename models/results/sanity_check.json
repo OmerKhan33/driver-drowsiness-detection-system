@@ -8,43 +8,43 @@
   "checks": {
     "pytorch_import": {
       "status": "passed",
-      "time_ms": 0.67
+      "time_ms": 0.48
     },
     "resnet18_forward": {
       "status": "passed",
-      "time_ms": 324.67
+      "time_ms": 227.05
     },
     "resnet50_forward": {
       "status": "passed",
-      "time_ms": 594.71
+      "time_ms": 496.03
     },
     "vgg16_forward": {
       "status": "passed",
-      "time_ms": 2932.18
+      "time_ms": 2035.19
     },
     "mobilenetv2_forward": {
       "status": "passed",
-      "time_ms": 133.03
+      "time_ms": 118.03
     },
     "efficientnet_b0_forward": {
       "status": "passed",
-      "time_ms": 191.68
+      "time_ms": 150.36
     },
     "yolo_inference": {
       "status": "passed",
-      "time_ms": 2176.19
+      "time_ms": 2251.76
     },
     "haar_cascade": {
       "status": "passed",
-      "time_ms": 175.05
+      "time_ms": 328.49
     },
     "transforms_pipeline": {
       "status": "passed",
-      "time_ms": 7.6
+      "time_ms": 7.75
     },
     "ear_stability": {
       "status": "passed",
-      "time_ms": 0.15
+      "time_ms": 0.13
     }
   }
 }

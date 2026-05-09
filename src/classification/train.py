@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -21,6 +22,20 @@ from torchvision import datasets
 
 from src.classification.model_builder import SUPPORTED_MODELS, build_model
 from src.utils.preprocessing import get_train_transforms, get_val_transforms
+
+# ─── Optional MLflow tracking ─────────────────────────────────────────────────
+# Disabled if MLflow is missing or `MLFLOW_DISABLE=1` is set. Every call site
+# wraps usage in `if _MLFLOW_AVAILABLE` so training never breaks because of
+# tracking issues.
+_MLFLOW_AVAILABLE = False
+mlflow = None  # type: ignore[assignment]
+if os.environ.get("MLFLOW_DISABLE", "0") != "1":
+    try:
+        import mlflow as _mlflow
+        mlflow = _mlflow
+        _MLFLOW_AVAILABLE = True
+    except ImportError:
+        pass
 
 
 # ─── Device Selection ─────────────────────────────────────────────────────────
@@ -237,6 +252,23 @@ def train_model(
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 
+    # MLflow run (best-effort — silently skipped if it can't start)
+    mlflow_run = None
+    if _MLFLOW_AVAILABLE:
+        try:
+            mlflow.set_experiment("drowsiness-classification")
+            mlflow_run = mlflow.start_run(run_name=model_name)
+            mlflow.log_params({
+                "model_name": model_name,
+                "num_epochs": num_epochs,
+                "lr": lr,
+                "device": str(device),
+                "use_amp": bool(scaler is not None),
+            })
+        except Exception as e:  # noqa: BLE001
+            print(f"  [warn] MLflow start_run failed, continuing without tracking: {e}")
+            mlflow_run = None
+
     # Training state
     history = {
         "train_loss": [],
@@ -285,6 +317,18 @@ def train_model(
             f"Time: {epoch_time:.1f}s"
         )
 
+        if mlflow_run is not None:
+            try:
+                mlflow.log_metrics({
+                    "train_loss": train_metrics["loss"],
+                    "train_acc": train_metrics["accuracy"],
+                    "val_loss": val_metrics["loss"],
+                    "val_acc": val_metrics["accuracy"],
+                    "lr": current_lr,
+                }, step=epoch)
+            except Exception:  # noqa: BLE001
+                pass
+
         # Best model checkpointing
         if val_metrics["accuracy"] > best_val_acc:
             best_val_acc = val_metrics["accuracy"]
@@ -314,6 +358,23 @@ def train_model(
     history["best_val_acc"] = best_val_acc
     history["best_epoch"] = best_epoch
     history["training_time_s"] = total_time
+
+    if mlflow_run is not None:
+        try:
+            mlflow.log_metrics({
+                "best_val_acc": best_val_acc,
+                "best_epoch": best_epoch,
+                "training_time_s": total_time,
+            })
+            best_path = save_path / f"{model_name}_best.pt"
+            if best_path.exists():
+                mlflow.log_artifact(str(best_path), artifact_path="weights")
+            mlflow.end_run()
+        except Exception:  # noqa: BLE001
+            try:
+                mlflow.end_run(status="FAILED")
+            except Exception:
+                pass
 
     return history
 
